@@ -25,6 +25,7 @@ def main(argv=None):
     r.add_argument("--facts", help="offline SEC companyfacts JSON")
     r.add_argument("--offline", action="store_true", help="use cached HTTP responses only")
     r.add_argument("--no-recalc", action="store_true", help="skip Excel recalculation")
+    r.add_argument("--open", action="store_true", help="open the finished model in Excel (macOS)")
     r.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
                    help="override a named-range input, e.g. val_Beta=0.6")
     a = ap.parse_args(argv)
@@ -46,6 +47,9 @@ def main(argv=None):
             print("EXCEL ERRORS (%d): %s" % (len(out["errors"]), ", ".join(out["errors"][:10])))
         if out["checks_flagged"]:
             print("CHECK flags:\n  " + "\n  ".join(out["checks_flagged"]))
+    if a.open:
+        import subprocess
+        subprocess.run(["open", res["model"]], check=False)
     return 0
 
 
