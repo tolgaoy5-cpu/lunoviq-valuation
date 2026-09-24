@@ -17,7 +17,11 @@ URL = "https://query1.finance.yahoo.com/v8/finance/chart/%s?range=%s&interval=%s
 
 
 def _chart(symbol, rng, interval, ttl, offline):
-    data, _ = http.fetch_json(URL % (urlquote(symbol), rng, interval), ttl=ttl, offline=offline)
+    try:
+        data, _ = http.fetch_json(URL % (urlquote(symbol), rng, interval), ttl=ttl, offline=offline)
+    except http.FetchError:                     # query1 intermittently 404s; query2 is a mirror
+        data, _ = http.fetch_json(URL.replace("query1", "query2") % (urlquote(symbol), rng, interval),
+                                  ttl=ttl, offline=offline)
     res = (data.get("chart") or {}).get("result")
     if not res:
         raise LookupError("Yahoo returned no data for %s: %s" % (symbol, data.get("chart", {}).get("error")))

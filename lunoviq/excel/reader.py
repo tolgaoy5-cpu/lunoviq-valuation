@@ -19,6 +19,7 @@ def outputs(path):
         "terminal_growth": wb["04_DCF_Valuation"]["B19"].value,
         "exit_multiple": wb["04_DCF_Valuation"]["C49"].value,
         "checks_flagged": _flagged(wb),
+        "errors": _errors(wb),
         "dcf_checks": dcf_checks(wb),
     }
 
@@ -41,3 +42,16 @@ def _label(ws, cell):
         if isinstance(v, str) and v not in ("OK", "CHECK"):
             return v
     return ""
+
+
+def _errors(wb):
+    """Every cell showing an Excel error (#DIV/0!, #VALUE!, #REF!, #N/A, #NUM!, #NAME?).
+    The template's own checks look for "CHECK" only, so errors must be caught here."""
+    out = []
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for c in row:
+                if isinstance(c.value, str) and c.value.startswith("#") and c.value.rstrip("!?") in (
+                        "#DIV/0", "#VALUE", "#REF", "#N/A", "#NUM", "#NAME", "#NULL"):
+                    out.append("%s!%s" % (ws.title, c.coordinate))
+    return out

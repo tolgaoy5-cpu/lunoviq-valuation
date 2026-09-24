@@ -153,7 +153,7 @@ def _market():
 def test_pipeline_offline_populates_copy(tmp_path):
     before = TEMPLATE_PATH.read_bytes()
     res = pipeline.run("KO", facts_path=KO, recalc=False, out_root=tmp_path, market=_market(),
-                       sets=["val_TerminalGrowth=0.02"])
+                       sets=["val_TerminalGrowth=0.02"], with_peers=False)
     assert TEMPLATE_PATH.read_bytes() == before
     wb = openpyxl.load_workbook(res["model"])
     assert writer.read_named(wb, "val_Beta") == [0.55]
@@ -164,6 +164,9 @@ def test_pipeline_offline_populates_copy(tmp_path):
     assert log["val_TerminalGrowth"] == OVERRIDE
     assert log["val_TerminalGrowth"] == OVERRIDE and "val_NonOpAssets" in log
     assert writer.read_named(wb, "val_NonOpAssets")[0] > 0          # KO equity-method stakes
+    assert wb["06_Comparable_Valuation"]["H41"].value is None        # demo deals cleared
+    assert wb["01_Inputs_Historicals"].row_dimensions[7].hidden     # unit-economics rows hidden
+    assert len(writer.read_named(wb, "scn_RevGrowthDelta")) == 3
     assert log["val_RiskFree"] == AUTO
     rec = json.loads(open(res["run_json"]).read())
     assert rec["inputs"]["val_ERP"]["value"] == 0.0414
@@ -171,7 +174,7 @@ def test_pipeline_offline_populates_copy(tmp_path):
 
 @pytest.mark.excel
 def test_pipeline_recalc_outputs(tmp_path):
-    res = pipeline.run("KO", facts_path=KO, recalc=True, out_root=tmp_path, market=_market())
+    res = pipeline.run("KO", facts_path=KO, recalc=True, out_root=tmp_path, market=_market(), with_peers=False)
     out = res["outputs"]
     assert out["health"]["3-Statement"] == "OK"
     assert 0.03 < out["wacc"] < 0.10

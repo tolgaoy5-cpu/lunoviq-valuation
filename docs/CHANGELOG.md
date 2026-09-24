@@ -168,3 +168,31 @@ The user decided to keep the 5-year horizon and asked for fully correct calculat
   - Reverse DCF: the terminal growth and the WACC implied by the market price.
 - **Tests:** 40 passed (`RUN_EXCEL_TESTS=1`).
 - **12-company run:** 11 of 11 are healthy (XOM excluded: SEC data gap). Full numbers are in `output/batch_check_*.json` and the results report.
+
+## 2026-09-24: Manager-grade pass, templates v5 and v6
+
+The user asked for accuracy suitable for presenting to a manager, and approved the income-statement change.
+
+- **v5 (`tools/build_master_v5.py`):** net income reconciliation.
+  - New lines: non-operating income, historical deferred tax, and "minority interest & other".
+  - Model net income now equals reported net income in every historical year. KO: 10,714 / 10,631 / 13,107 million $.
+  - Forecast: non-operating income is held at its average, and the minority share at its historical ratio (flagged).
+- **v6 (`tools/build_master_v6.py`):**
+  - P/E fixed. It was EV ÷ net income; it is now market cap ÷ net income, with a new market-cap column.
+  - Empty peer rows are ignored instead of producing `#DIV/0!`.
+  - Precedent transactions show "n/a" when no deals are entered. There is no free M&A data source, and the demo deals are no longer shown.
+- **Pipeline:**
+  - Trading comparables are selected automatically: `peers/<TICKER>.csv` (analyst list) first, otherwise the same Damodaran industry by closest revenue (SEC frames). Peers are measured exactly like the target, and skipped peers are logged with the reason.
+  - Unit-economics demo rows are hidden.
+  - The Turkish note in the English workbook was translated.
+  - Print and PDF setup: landscape, one page wide. KO went from 188 PDF pages to 30.
+  - Drivers use 5 years of history. Bear/bull ranges = ± one standard deviation of the company's own growth and margin history.
+  - Yahoo falls back to its mirror host.
+- **Quality gate:** the reader now scans every cell for Excel errors. The template's checks only looked for "CHECK" and missed a `#DIV/0!`.
+- **Tests:** 45 passed (`RUN_EXCEL_TESTS=1`).
+- **12-company run:** 11 of 11 healthy with 0 Excel errors (XOM: SEC data gap).
+- **Visual QA:** KO exported to PDF through Excel. Dashboard, income statement, DCF, comparables and sources pages reviewed.
+- **External benchmarks:**
+  - JNJ: model 229–289 $ against an analyst fair value of 305 $.
+  - MSFT: sector-multiple method 624 $ against Morningstar's 600 $.
+  - KO: model 45–58 $ against Morningstar's 74 $ (19x EBITDA, where the model uses the industry's 16.9x).

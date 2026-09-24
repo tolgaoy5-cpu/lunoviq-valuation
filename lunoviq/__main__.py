@@ -42,6 +42,8 @@ def main(argv=None):
         for k, v in out["valuation"].items():
             print("  %-24s %s" % (k, _fmt(v)))
         print("Health  : %s" % ", ".join("%s=%s" % kv for kv in out["health"].items()))
+        if out.get("errors"):
+            print("EXCEL ERRORS (%d): %s" % (len(out["errors"]), ", ".join(out["errors"][:10])))
         if out["checks_flagged"]:
             print("CHECK flags:\n  " + "\n  ".join(out["checks_flagged"]))
     return 0

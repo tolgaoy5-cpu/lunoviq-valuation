@@ -13,10 +13,10 @@ from pathlib import Path
 
 import openpyxl
 
-from . import config, drivers, market_inputs, providers
-from .excel import writer
+from . import config, drivers, market_inputs, peers as peer_sel, providers
+from .excel import presentation, writer
 from .providers import sec_xbrl
-from .schema import AUTO, OVERRIDE, DataPoint
+from .schema import AUTO, OVERRIDE, TEMPLATE, DataPoint
 
 # Forecast drivers the legacy writer derives from the latest fiscal year
 # (revenue growth is replaced by lunoviq.drivers).
@@ -48,7 +48,8 @@ def load_overrides(ticker, cli_sets=()):
                          dt.date.today().isoformat(), "manual", OVERRIDE) for k, v in vals.items()}
 
 
-def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=None, market=None):
+def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=None, market=None,
+        with_peers=True):
     """Execute the pipeline. `market` lets tests inject market inputs."""
     ticker = ticker.upper()
     years = config.get("pipeline.years", 3)
@@ -56,10 +57,12 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     out_dir = Path(out_root or _path("paths.output_dir", "output")) / ("%s_%s" % (ticker, stamp))
     out_dir.mkdir(parents=True, exist_ok=True)
     model = out_dir / ("%s_Model.xlsx" % re.sub(r"\W+", "_", ticker))
-    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v4.xlsx")
+    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v6.xlsx")
 
     # 1-2. data -> schema
-    st = providers.get("fundamentals", facts_path=facts_path).financials(ticker, years, offline=offline)
+    fundamentals = providers.get("fundamentals", facts_path=facts_path)
+    st = fundamentals.financials(ticker, years, offline=offline)
+    st_long = fundamentals.financials(ticker, config.get("pipeline.history_years", 5), offline=offline)
     if market is None:
         market = market_inputs.build(st, providers.get("prices"), providers.get("risk_free"),
                                      providers.get("equity_risk_premium"), offline=offline)
@@ -80,11 +83,30 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     inputs.update(writer.template_defaults(wb, config.get("pipeline.review_inputs", [])))
     overrides = load_overrides(ticker, sets)
     terminal = (overrides.get("val_TerminalGrowth") or inputs["val_TerminalGrowth"]).value
-    inputs.update(drivers.build(st, terminal))
+    inputs.update(drivers.build(st, terminal, st_long))
     inputs.update(overrides)
     log += writer.apply_inputs(wb, inputs)
+
+    # comparables, precedent transactions, unit-economics rows
+    peer_list, skipped, peer_src = ([], [], "not run")
+    if with_peers:
+        peer_list, skipped, peer_src = peer_sel.select(ticker, st.latest("revenue"), st.fiscal_years[-1],
+                                                       offline=offline)
+        presentation.write_peers(wb, peer_list)
+    presentation.clear_precedents(wb)
+    presentation.hide_unit_economics(wb)
+    presentation.tidy(wb)
+    log.append(("comps_peers", DataPoint(", ".join(p["ticker"] for p in peer_list) or None, "", peer_src,
+                                         dt.date.today().isoformat(),
+                                         "EV/EBITDA: " + ", ".join("%s %.1fx" % (p["ticker"], p["ev"] / p["ebitda"])
+                                                                   for p in peer_list if p.get("ebitda") and p.get("ev"))
+                                         + ("; skipped: " + "; ".join(skipped) if skipped else ""),
+                                         AUTO), "06_Comparable_Valuation!A7:K10"))
+    log.append(("precedents", DataPoint(None, "", "none", "", "no free M&A transaction source; method shown as "
+                                        "n/a - enter deals in 06!A41:J45 to activate", TEMPLATE), "06!A41:J45"))
     writer.write_log(wb, log, "%s (%s) | generated %s | template %s"
                      % (st.company, ticker, dt.datetime.now().strftime("%Y-%m-%d %H:%M"), template.name))
+    presentation.print_setup(wb)                  # after 09_Sources exists
     wb.save(model)
 
     # 5-6. recalculation and validation
@@ -96,6 +118,10 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
         excel_recalc(model)
         result["outputs"] = outputs(model)
 
+    result["peers"] = [{k: p.get(k) for k in ("ticker", "name", "ev", "market_cap", "revenue", "ebitda",
+                                              "net_income", "rationale")} for p in peer_list]
+    result["peer_source"] = peer_src
+    result["peers_skipped"] = skipped
     record = dict(result, generated=dt.datetime.now().isoformat(timespec="seconds"),
                   template=str(template),
                   inputs={k: v.to_dict() for k, v in inputs.items()},
