@@ -1,6 +1,8 @@
 """Read calculated outputs back from a recalculated workbook (cached values)."""
 import openpyxl
 
+from ..valuation_checks import dcf_checks
+
 HEALTH_ROWS = range(51, 58)          # 00_Dashboard H51:I57 (area, status); I57 = overall
 VALUATION_ROWS = range(37, 43)       # 00_Dashboard A37:B42
 
@@ -15,7 +17,9 @@ def outputs(path):
         "valuation": {d["A%d" % r].value: d["B%d" % r].value for r in VALUATION_ROWS},
         "wacc": wb["04_DCF_Valuation"]["B18"].value,
         "terminal_growth": wb["04_DCF_Valuation"]["B19"].value,
+        "exit_multiple": wb["04_DCF_Valuation"]["C49"].value,
         "checks_flagged": _flagged(wb),
+        "dcf_checks": dcf_checks(wb),
     }
 
 

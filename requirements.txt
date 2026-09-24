@@ -1,3 +1,4 @@
 openpyxl>=3.1
 xlwings>=0.30      # optional: Excel recalculation (macOS/Windows with Microsoft Excel)
 pytest>=8          # tests
+xlrd>=2.0          # Damodaran industry multiples (.xls)

@@ -3,8 +3,8 @@ Market and cost-of-capital inputs, each derived from free data with its
 method recorded. Policy parameters (beta window, credit spread, tax bounds)
 come from config [wacc] so they are visible and adjustable, not buried in code.
 
-Inputs that are genuine judgement calls (terminal growth, exit multiple) are
-NOT invented here: they stay at the template value and are flagged for review.
+The exit multiple is the company's industry EV/EBITDA (Damodaran, US). Terminal
+growth stays at the template's standard 2.5% and is flagged for review.
 """
 import statistics
 
@@ -135,4 +135,11 @@ def build(st, prices, rf_providers, erp_provider, offline=False):
     mcap, wd, we = capital_weights(st, q.price)
     out["val_DebtWeight"], out["val_EquityWeight"] = wd, we
     out["_market_cap"] = mcap                             # informational, not written
+    try:
+        from .providers.industry import DamodaranIndustryProvider
+        em = DamodaranIndustryProvider().ev_ebitda(st.ticker, offline=offline)
+    except Exception:
+        em = None
+    if em:
+        out["val_ExitMultiple"] = em
     return out

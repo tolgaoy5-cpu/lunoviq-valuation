@@ -10,6 +10,7 @@ Standard mechanical defaults, not forecasts of the analyst's view:
     asset lives      net PP&E / D&A (existing and new assets)
     tax basis PP&E   equal to book PP&E (no opening timing difference)
     payout           average dividends / net income
+    equity bridge    non-operating investments and minority interest (latest balance)
     debt             held flat (no scheduled repayment or new borrowing)
 """
 from . import config
@@ -115,6 +116,14 @@ def build(st, terminal_growth):
                                        "same as existing assets (%s)" % life.method, AUTO)
     if st.latest("ppe_net") is not None:
         out["hist_TaxBasisPPE"] = tax_basis(st)
+    for name, key, what in (("val_NonOpAssets", "nonop_investments",
+                              "non-operating investments (equity-method stakes, long-term securities)"),
+                             ("val_MinorityInterest", "minority_interest", "non-controlling interest")):
+        v = st.latest(key)
+        method = st.items.get(key, {}).get(st.fiscal_years[-1])
+        out[name] = _dp(0.0 if v is None else v / 1000, "USD 000s", st,
+                        "%s, FY%s balance; %s" % (what, st.fiscal_years[-1],
+                                                 method.method if method and v is not None else "not reported -> 0"))
     flat = "debt held flat - no scheduled repayment/borrowing (standard simplification)"
     out["drv_DebtRepayment"] = DataPoint(0.0, "USD 000s", "policy", "", flat, AUTO)
     out["drv_NewBorrowing"] = DataPoint(0.0, "USD 000s", "policy", "", flat, AUTO)

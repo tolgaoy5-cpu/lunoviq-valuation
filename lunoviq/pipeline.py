@@ -56,7 +56,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     out_dir = Path(out_root or _path("paths.output_dir", "output")) / ("%s_%s" % (ticker, stamp))
     out_dir.mkdir(parents=True, exist_ok=True)
     model = out_dir / ("%s_Model.xlsx" % re.sub(r"\W+", "_", ticker))
-    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v3.xlsx")
+    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v4.xlsx")
 
     # 1-2. data -> schema
     st = providers.get("fundamentals", facts_path=facts_path).financials(ticker, years, offline=offline)

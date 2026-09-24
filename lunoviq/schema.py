@@ -62,6 +62,8 @@ LINE_ITEMS = {
     "total_liabilities":       ("Total Liabilities (reported)", "BS", "USD"),
     "total_equity":            ("Total Equity (reported)", "BS", "USD"),
     "shares_diluted":          ("Shares Outstanding", "Other", "shares"),
+    "nonop_investments":       ("Non-operating Investments", "BS", "USD"),
+    "minority_interest":       ("Minority Interest", "BS", "USD"),
     "capex":                   ("Capital Expenditure", "CF", "USD"),
     "dividends":               ("Dividends Paid", "CF", "USD"),
 }

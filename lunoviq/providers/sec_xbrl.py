@@ -63,6 +63,8 @@ TAGS = {
     "Total Liabilities (reported)": ["Liabilities"],
     # Gelir tablosunu raporlanan faaliyet karina baglamak icin (asagidaki mutabakat)
     "Operating Income (reported)": ["OperatingIncomeLoss"],
+    # DCF ozkaynak koprusu icin: azinlik paylari ozkaynak degerinden dusulur
+    "Minority Interest": ["MinorityInterest"],
     "Pre-tax Income (reported)": [
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
@@ -118,6 +120,21 @@ SUMS = {
             (["CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"], []),
         ],
     },
+    # Faaliyet disi yatirimlar (istirakler, uzun vadeli menkul kiymetler).
+    # Getirileri serbest nakit akisinda yok, bu yuzden DCF'de ayrica eklenir.
+    # Her yil tek tarif: bilanco kalemleri birbirini icerebilir (MSFT'de
+    # LongTermInvestments istirakleri de kapsar).
+    "Non-operating Investments": {
+        "single": [],
+        "recipes": [
+            (["LongTermInvestments"], []),
+            (["EquityMethodInvestments", "MarketableSecuritiesNoncurrent"], []),
+            (["EquityMethodInvestments"], []),
+            (["MarketableSecuritiesNoncurrent"], []),
+            (["OtherLongTermInvestments"], []),
+            (["EquitySecuritiesFVNINoncurrent"], []),
+        ],
+    },
     "Common Equity": {
         "single": [],
         "recipes": [
@@ -145,7 +162,7 @@ ORDER = ["Revenue", "Cost of Goods Sold", "SG&A", "Other Operating Expense",
          "Shares Outstanding",
          "Total Assets (reported)", "Total Liabilities (reported)",
          "Total Equity (reported)", "Operating Income (reported)",
-         "Pre-tax Income (reported)"]
+         "Pre-tax Income (reported)", "Non-operating Investments", "Minority Interest"]
 
 
 class DataError(ValueError):

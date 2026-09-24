@@ -13,7 +13,7 @@ from lunoviq.providers.sec_edgar import SecEdgarProvider
 from lunoviq.schema import AUTO, OVERRIDE, TEMPLATE, DataPoint, PriceHistory
 
 KO = ROOT / "data" / "fixtures" / "ko.json"
-TEMPLATE_PATH = ROOT / "Lunoviq_Master_Financial_Model_v2.xlsx"
+TEMPLATE_PATH = ROOT / "Lunoviq_Master_Financial_Model_v4.xlsx"
 
 
 @pytest.fixture(scope="module")
@@ -162,7 +162,8 @@ def test_pipeline_offline_populates_copy(tmp_path):
     assert writer.read_named(wb, "val_TerminalGrowth") == [0.02]
     log = {r[0].value: r[4].value for r in wb["09_Sources"].iter_rows(min_row=5)}
     assert log["val_TerminalGrowth"] == OVERRIDE
-    assert log["val_ExitMultiple"] == TEMPLATE
+    assert log["val_TerminalGrowth"] == OVERRIDE and "val_NonOpAssets" in log
+    assert writer.read_named(wb, "val_NonOpAssets")[0] > 0          # KO equity-method stakes
     assert log["val_RiskFree"] == AUTO
     rec = json.loads(open(res["run_json"]).read())
     assert rec["inputs"]["val_ERP"]["value"] == 0.0414
@@ -175,3 +176,4 @@ def test_pipeline_recalc_outputs(tmp_path):
     assert out["health"]["3-Statement"] == "OK"
     assert 0.03 < out["wacc"] < 0.10
     assert out["valuation"]["Current Price"] == pytest.approx(88.09)
+    assert out["dcf_checks"]["ev_match"]                              # Python recompute == Excel

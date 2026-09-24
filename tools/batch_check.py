@@ -49,6 +49,10 @@ def check(ticker, recalc):
         row["exit"] = out["valuation"].get("DCF Exit Multiple")
         row["health"] = out["health"].get("Overall")
         row["flags"] = out["checks_flagged"]
+        row["exit_multiple"] = out.get("exit_multiple")
+        row["dcf_checks"] = out.get("dcf_checks")
+    row["nonop"] = (inp.get("val_NonOpAssets") or {}).get("value")
+    row["industry"] = (inp.get("val_ExitMultiple") or {}).get("method", "")
     return row
 
 
@@ -68,12 +72,12 @@ def main():
         if "error" in r:
             print("%-6s ERROR %s" % (t, r["error"][:150]))
         else:
-            print("%-6s px %8.2f  beta %5.2f  kd %5.2f%%  wd %5.1f%%  tax %5.1f%%  WACC %s  DCF %s  health %s  miss %s"
-                  % (t, r["ctl_SharePrice"] or 0, r["val_Beta"] or 0, (r["val_CostOfDebt"] or 0) * 100,
-                     (r["val_DebtWeight"] or 0) * 100, (r["drv_TaxRate"] or 0) * 100,
-                     "%.2f%%" % (r["wacc"] * 100) if r.get("wacc") else "-",
-                     "%.2f" % r["dcf"] if isinstance(r.get("dcf"), (int, float)) else r.get("dcf"),
-                     r.get("health"), ",".join(r["missing"]) or "-"), flush=True)
+            c = r.get("dcf_checks") or {}
+            f = lambda v, pct=False: "-" if v is None else ("%.2f%%" % (v * 100) if pct else "%.2f" % v)
+            print("%-6s px %8.2f | WACC %s | DCF perp %8s | DCF exit %8s (%sx) | implied g %s, implied WACC %s | EV match %s | health %s"
+                  % (t, r["ctl_SharePrice"] or 0, f(r.get("wacc"), True), f(r.get("dcf")), f(r.get("exit")),
+                     f(r.get("exit_multiple")), f(c.get("implied_terminal_growth"), True),
+                     f(c.get("implied_wacc"), True), c.get("ev_match"), r.get("health")), flush=True)
     out = ROOT / "output" / ("batch_check_%s.json" % dt.datetime.now().strftime("%Y%m%d-%H%M"))
     out.write_text(json.dumps(rows, indent=2, default=str))
     print("\nSaved", out)

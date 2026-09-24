@@ -151,3 +151,20 @@ We ran a 12-company test together with the user: KO, PEP, AAPL, MSFT, NVDA, WMT,
 - non-operating investments (equity-method stakes, long-term securities) not being valued.
 
 These are the next decisions.
+
+## 2026-09-24: Valuation-method fixes with the 5-year horizon kept (template v4)
+
+The user decided to keep the 5-year horizon and asked for fully correct calculations.
+
+- **Template v4** (`tools/build_master_v4.py`, built from v3 without modifying it):
+  - **Normalized terminal year.** The terminal cash flow is in `04_DCF_Valuation!G6:G11`, with maintenance capex = the smaller of 2030 capex and 2030 D&A. This removes MSFT/GOOGL-style over-investment carried into perpetuity. It also avoids overstating AMZN, whose 2030 D&A is temporarily high because older assets are still being written off. All 112 terminal references in the sensitivity grids now use it.
+  - **Equity bridge:** net debt − non-operating investments + minority interest. The inputs are `01_Inputs!C68:C69`, named `val_NonOpAssets` and `val_MinorityInterest`.
+- **Data additions:**
+  - Non-operating investments, with one recipe per year to avoid double counting.
+  - Minority interest.
+  - Exit multiple = Damodaran US industry EV/EBITDA (positive-EBITDA firms, January 2026), with each ticker mapped to its industry via `indname.xlsx`. New module: `lunoviq/providers/industry.py`. New dependency: `xlrd`.
+- **Independent checks** (`lunoviq/valuation_checks.py`):
+  - Python recomputes the enterprise value from the workbook's own cash flows. Result: it matches Excel for all 11 companies.
+  - Reverse DCF: the terminal growth and the WACC implied by the market price.
+- **Tests:** 40 passed (`RUN_EXCEL_TESTS=1`).
+- **12-company run:** 11 of 11 are healthy (XOM excluded: SEC data gap). Full numbers are in `output/batch_check_*.json` and the results report.
