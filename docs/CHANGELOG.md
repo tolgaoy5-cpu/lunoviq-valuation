@@ -98,3 +98,56 @@ The user's direction: use free sources for now, publish on GitHub as a portfolio
   3. Beta adjustment (raw vs Blume) is a policy choice. The default is raw; set `beta_adjustment = "blume"` to switch.
   4. Historical net income doesn't reconcile to the reported figure (carried over from the previous milestone).
   5. Yahoo is not licensed for commercial use.
+
+## 2026-09-24: 12-company robustness run, data root-cause fixes, standard WACC, data-driven drivers, template v3
+
+We ran a 12-company test together with the user: KO, PEP, AAPL, MSFT, NVDA, WMT, MNST, JNJ, XOM, GOOGL, AMZN and TSLA. The tool is `tools/batch_check.py`.
+
+**Data-layer root causes** (`lunoviq/providers/sec_xbrl.py`):
+
+| Problem | Company | Fix |
+|---|---|---|
+| The fiscal-year-end list used only the first revenue tag, so recent years and the whole balance sheet were lost | NVDA, GOOGL | Merge all revenue tags, from 10-K filings only |
+| Tags were chosen first-series-wins, so later years went missing | WMT and TSLA D&A, AMZN tax | Merge per year by tag priority |
+| An unfinished year leaked in from a 10-Q | AMZN "2026" | Model years = fiscal years with 10-K revenue |
+| Operating-expense categories missing (≈204bn) | AMZN | Reconcile: EBITDA = reported operating income + D&A, with "Other OpEx" as the balancing line (also removes the D&A double count); fallback pre-tax + interest (JNJ) |
+| Current tax mixed definitions across years | AMZN | Federal + state + foreign when the total is absent |
+| Plugs were blank if any component was missing, so the forecast balance sheet failed | AAPL, GOOGL, WMT, AMZN, TSLA, MNST | Missing component = 0 inside "Other" |
+| Non-controlling interest was dropped | PEP | Equity = assets − liabilities |
+| Net debt ignored short-term investments | AAPL, GOOGL, MSFT | Cash = cash + short-term investments, using exactly one securities tag per year (TSLA had double counting) |
+| Tag coverage gaps | PEP, MNST, AMZN/MSFT/JNJ/GOOGL/TSLA, JNJ | PEP receivables; MNST SG&A and equity; the 2024+ interest-expense tag; JNJ dividends |
+| No usable 10-K revenue | XOM | Clear `DataError` (SEC companyfacts holds no 10-K facts for XOM) |
+
+**WACC** (industry-standard methods; the user agreed they need no decision):
+- Beta: Blume-adjusted.
+- Cost of debt: risk-free + the Damodaran synthetic-rating spread from interest coverage, using the live ratings table.
+
+**Forecast drivers** (new `lunoviq/drivers.py`) replace the template's demo values:
+
+| Driver | Method |
+|---|---|
+| Revenue growth | Recent CAGR, fading linearly to terminal growth |
+| Capex % | 3-year average |
+| DSO / DIO / DPO | Latest fiscal year |
+| Asset lives | Net PP&E ÷ D&A |
+| Tax basis of PP&E | Equal to book PP&E. The demo value of $40m distorted every company's taxes and free cash flow |
+| Dividend payout | Dividends ÷ net income |
+| Debt | Held flat |
+
+**Template v3** (`tools/build_master_v3.py`; v2 is unchanged), 42 cells in `05_Sensitivity`:
+- The WACC and terminal-growth axes are centered on the model's own values. They were hard-coded around the demo company's 8.5%.
+- Scenario EBITDA uses the model's own 2030 margin instead of the demo 32%.
+- Scenario revenue uses the growth driver of the active revenue engine.
+- On the demo data, the core valuation is identical to v2 (Excel regression test).
+
+**Tests:** 37 passed (`RUN_EXCEL_TESTS=1`). New files: `tests/test_xbrl_mapping.py` (one synthetic test per real bug) and `tests/test_master_v3.py`.
+
+**Result:** 10 of 11 companies have every health check OK, and every historical balance sheet balances exactly. TSLA flags "scenario ordering" because its value is close to zero.
+
+**Open item, not a bug:** DCF values fall far below market prices for the mega-cap growth companies (AAPL, MSFT, NVDA, GOOGL, AMZN), for KO and WMT. That comes from methodology choices:
+- a 5-year explicit horizon fading to 2.5% growth,
+- the recent AI capex level carried forward,
+- a high risk-free rate of 5.1%,
+- non-operating investments (equity-method stakes, long-term securities) not being valued.
+
+These are the next decisions.

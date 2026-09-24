@@ -42,8 +42,6 @@ TAGS = {
                          "InterestExpenseNonoperating",          # 2024+ taksonomi (orn. AMZN)
                          "InterestIncomeExpenseNet"],
     "Net Income": ["NetIncomeLoss", "ProfitLoss"],
-    "Cash & Equivalents": ["CashAndCashEquivalentsAtCarryingValue",
-                           "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
     "Accounts Receivable": ["AccountsReceivableNetCurrent", "ReceivablesNetCurrent",
                             "AccountsNotesAndLoansReceivableNetCurrent"],   # orn. PEP
     "Inventory": ["InventoryNet", "InventoryFinishedGoods"],
@@ -99,6 +97,25 @@ SUMS = {
             (["CurrentIncomeTaxExpenseBenefit"], []),
             (["CurrentFederalTaxExpenseBenefit"],
              ["CurrentStateAndLocalTaxExpenseBenefit", "CurrentForeignTaxExpenseBenefit"]),
+        ],
+    },
+    # Nakit = nakit ve benzerleri + kisa vadeli yatirimlar/menkul kiymetler.
+    # Net borc (DCF ozkaynak koprusu) bu tanimla hesaplanir; yalniz nakit
+    # alininca yatirim portfoyu buyuk sirketlerde (AAPL, GOOGL, MSFT) net borc
+    # olmasi gerekenden yuksek cikiyordu.
+    "Cash & Equivalents": {
+        "single": [],
+        "recipes": [
+            # Her yil TEK bir menkul kiymet etiketi kullanilir: sirketler ayni tutari
+            # birden cok etiketle raporlayabiliyor (orn. TSLA'da MarketableSecurities-
+            # Current = ShortTermInvestments), toplamak cift sayim yapar.
+            (["CashCashEquivalentsAndShortTermInvestments"], []),
+            (["CashAndCashEquivalentsAtCarryingValue", "MarketableSecuritiesCurrent"], []),
+            (["CashAndCashEquivalentsAtCarryingValue", "AvailableForSaleSecuritiesDebtSecuritiesCurrent"], []),
+            (["CashAndCashEquivalentsAtCarryingValue", "ShortTermInvestments"], []),
+            (["CashAndCashEquivalentsAtCarryingValue", "AvailableForSaleSecuritiesDebtSecurities"], []),  # NVDA
+            (["CashAndCashEquivalentsAtCarryingValue"], []),
+            (["CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"], []),
         ],
     },
     "Common Equity": {
@@ -345,16 +362,23 @@ def build_feed(facts, n_years=3):
         tl = g(TL, y)
         if tl is None and ta is not None and te is not None:
             tl = ta - te                                   # Liabilities raporlanmadiysa turet
-        parts_a = [g(k, y) for k in ("Cash & Equivalents", "Accounts Receivable",
-                                     "Inventory", "PP&E (net)")]
-        parts_l = [g(k, y) for k in ("Accounts Payable", "Total Debt",
-                                     "Deferred Tax Liability")]
-        parts_e = [g(k, y) for k in ("Common Equity", "Retained Earnings")]
-        if ta is not None and all(p is not None for p in parts_a):
+        # Raporlanmayan bilesen (orn. AAPL'de ertelenmis vergi yukumlulugu, GOOGL'de
+        # stok) 0 sayilir: o tutar zaten "diger" kalemin icindedir. Eskiden tek
+        # bir eksik bilesen tamamlayiciyi bos birakiyor ve tahmin bilancosu tutmuyordu.
+        parts_a = [g(k, y) or 0 for k in ("Cash & Equivalents", "Accounts Receivable",
+                                          "Inventory", "PP&E (net)")]
+        parts_l = [g(k, y) or 0 for k in ("Accounts Payable", "Total Debt",
+                                          "Deferred Tax Liability")]
+        parts_e = [g(k, y) or 0 for k in ("Common Equity", "Retained Earnings")]
+        if ta is not None:
             oa[y] = ta - sum(parts_a)
-        if tl is not None and all(p is not None for p in parts_l):
+        if tl is not None:
             ol[y] = tl - sum(parts_l)
-        if te is not None and all(p is not None for p in parts_e):
+        # Toplam ozkaynak = varliklar - yukumlulukler. Ana ortaklik ozkaynagi (TE)
+        # azinlik paylarini icermez (orn. PEP); fark da "diger ozkaynak"a gider.
+        if ta is not None and tl is not None:
+            oe[y] = (ta - tl) - sum(parts_e)
+        elif te is not None:
             oe[y] = te - sum(parts_e)
     # ---- Faaliyet gideri mutabakati ------------------------------------------
     # Sablonun gider kalemleri (COGS, SG&A, Diger) sirketlerin raporladigi
@@ -390,7 +414,7 @@ def build_feed(facts, n_years=3):
     series["Other Equity (plug)"] = oe
     used["Other Assets (plug)"] = "Assets - (Cash+AR+Inv+PPE)"
     used["Other Liabilities (plug)"] = "Liabilities - (AP+Debt+DTL)"
-    used["Other Equity (plug)"] = "StockholdersEquity - (Common+Retained)"
+    used["Other Equity (plug)"] = "(Assets - Liabilities) - (Common+Retained)  [azinlik paylari dahil]"
 
     # Yillar: 10-K'si olan ve geliri bulunan mali yillar. Eskiden tum serilerin
     # birlesimi aliniyordu; tek bir kalemde gorulen kapanmamis yil (orn. AMZN

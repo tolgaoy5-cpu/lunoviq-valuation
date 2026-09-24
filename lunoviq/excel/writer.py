@@ -43,8 +43,14 @@ def write_named(wb, name, value):
     for c in cells:
         if isinstance(c.value, str) and c.value.startswith("="):
             raise FormulaProtectedError("%s -> %s!%s holds a formula" % (name, c.parent.title, c.coordinate))
-    for c in cells:
-        c.value = value
+    if isinstance(value, (list, tuple)):
+        if len(value) != len(cells):
+            raise ValueError("%s has %d cells, got %d values" % (name, len(cells), len(value)))
+        for c, v in zip(cells, value):
+            c.value = v
+    else:
+        for c in cells:
+            c.value = value
     return ["%s!%s" % (c.parent.title, c.coordinate) for c in cells]
 
 
@@ -85,7 +91,8 @@ def write_log(wb, rows, header_note):
         c.fill = PatternFill("solid", fgColor="1F3864")
     fills = {TEMPLATE: "FFF2CC", OVERRIDE: "DDEBF7"}
     for r, (name, dp, where) in enumerate(rows, 5):
-        vals = [name, MARKET_INPUTS.get(name, ""), dp.value, dp.unit, dp.status,
+        shown = ", ".join("%g" % v for v in dp.value if v is not None) if isinstance(dp.value, list) else dp.value
+        vals = [name, MARKET_INPUTS.get(name, ""), shown, dp.unit, dp.status,
                 dp.source, dp.as_of, dp.method, where]
         for i, v in enumerate(vals, 1):
             c = ws.cell(row=r, column=i, value=v)

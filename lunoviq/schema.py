@@ -62,6 +62,8 @@ LINE_ITEMS = {
     "total_liabilities":       ("Total Liabilities (reported)", "BS", "USD"),
     "total_equity":            ("Total Equity (reported)", "BS", "USD"),
     "shares_diluted":          ("Shares Outstanding", "Other", "shares"),
+    "capex":                   ("Capital Expenditure", "CF", "USD"),
+    "dividends":               ("Dividends Paid", "CF", "USD"),
 }
 LABEL_TO_KEY = {v[0]: k for k, v in LINE_ITEMS.items()}
 

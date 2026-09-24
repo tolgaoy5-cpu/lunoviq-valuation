@@ -36,7 +36,7 @@ tax_rate_fallback = 0.21              # US federal statutory, used if effective 
 tax_rate_bounds = [0.0, 0.35]
 
 [paths]
-template = "Lunoviq_Master_Financial_Model_v2.xlsx"
+template = "Lunoviq_Master_Financial_Model_v3.xlsx"
 output_dir = "output"
 overrides_dir = "overrides"
 
@@ -45,3 +45,8 @@ recalculate = true                    # needs Microsoft Excel (xlwings)
 years = 3
 # Judgement inputs never auto-filled; left at template value and flagged in 09_Sources.
 review_inputs = ["val_TerminalGrowth", "val_ExitMultiple"]
+
+[drivers]
+# Mechanical defaults derived from each company's history (see lunoviq/drivers.py).
+growth_bounds = [-0.20, 0.40]         # recent CAGR is capped before fading to terminal growth
+asset_life_bounds = [5, 40]           # years; net PP&E / D&A

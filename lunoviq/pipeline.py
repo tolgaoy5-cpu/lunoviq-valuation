@@ -13,14 +13,14 @@ from pathlib import Path
 
 import openpyxl
 
-from . import config, market_inputs, providers
+from . import config, drivers, market_inputs, providers
 from .excel import writer
 from .providers import sec_xbrl
 from .schema import AUTO, OVERRIDE, DataPoint
 
-# Forecast drivers the legacy writer derives from the latest fiscal year.
+# Forecast drivers the legacy writer derives from the latest fiscal year
+# (revenue growth is replaced by lunoviq.drivers).
 HISTORY_DRIVERS = {
-    "gm_RevenueGrowth": "last FY revenue growth, copied to all forecast years",
     "gm_CogsMargin": "last FY COGS / revenue, copied to all forecast years",
     "drv_SGApct": "last FY SG&A / revenue, copied to all forecast years",
     "drv_OtherOpExPct": "latest available other opex / revenue, copied to all forecast years",
@@ -56,7 +56,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     out_dir = Path(out_root or _path("paths.output_dir", "output")) / ("%s_%s" % (ticker, stamp))
     out_dir.mkdir(parents=True, exist_ok=True)
     model = out_dir / ("%s_Model.xlsx" % re.sub(r"\W+", "_", ticker))
-    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v2.xlsx")
+    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v3.xlsx")
 
     # 1-2. data -> schema
     st = providers.get("fundamentals", facts_path=facts_path).financials(ticker, years, offline=offline)
@@ -79,6 +79,8 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     inputs = dict(market)
     inputs.update(writer.template_defaults(wb, config.get("pipeline.review_inputs", [])))
     overrides = load_overrides(ticker, sets)
+    terminal = (overrides.get("val_TerminalGrowth") or inputs["val_TerminalGrowth"]).value
+    inputs.update(drivers.build(st, terminal))
     inputs.update(overrides)
     log += writer.apply_inputs(wb, inputs)
     writer.write_log(wb, log, "%s (%s) | generated %s | template %s"
