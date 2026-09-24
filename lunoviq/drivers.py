@@ -110,14 +110,15 @@ def below_ebit(st):
         minority = reported NI - (EBT + tax)               (NCI and anything else)
     """
     k = lambda v: None if v is None else v / 1000
-    nonop, deferred, minority, pre_nci = [], [], [], []
+    nonop, deferred, minority, pre_nci, net_int = [], [], [], [], []
     for y in st.fiscal_years:
         v = lambda key: st.value(key, y)
         rev = v("revenue")
         if rev is None:
             return None
         ebit = rev - sum(v(x) or 0 for x in ("cogs", "sga", "other_opex", "d_and_a"))
-        interest = abs(v("interest_expense") or 0)
+        # net interest, like the forecast line (debt interest - interest earned on cash)
+        interest = abs(v("interest_expense") or 0) - (v("interest_income") or 0)
         pretax, total_tax, cur = v("pretax_income"), v("income_tax_total"), v("current_tax") or 0
         n = (pretax - (ebit - interest)) if pretax is not None else 0.0
         d = -(total_tax - cur) if total_tax is not None else 0.0
@@ -125,13 +126,18 @@ def below_ebit(st):
         ni = v("net_income")
         m = (ni - (ebt + tax)) if ni is not None else 0.0
         nonop.append(k(n)); deferred.append(k(d)); minority.append(k(m)); pre_nci.append(ebt + tax)
+        net_int.append(k(-interest))
     avg_nonop = sum(nonop) / len(nonop)
     shares = [-m * 1000 / p for m, p in zip(minority, pre_nci) if p > 0]
     pct = _clamp(sum(shares) / len(shares), [0.0, 0.3]) if shares else 0.0
     fy = "FY%s-FY%s" % (st.fiscal_years[0], st.fiscal_years[-1])
+    has_ii = any(st.value("interest_income", y) for y in st.fiscal_years)
     return {
+        "hist_InterestExpense": _dp(net_int, "USD 000s", st,
+                                    "net interest = -(interest expense - interest income), %s%s"
+                                    % (fy, "" if has_ii else "; interest income not reported separately")),
         "hist_NonOpIncome": _dp(nonop, "USD 000s", st,
-                                "reported pre-tax income - (EBIT - interest), %s" % fy),
+                                "reported pre-tax income - (EBIT - net interest), %s" % fy),
         "hist_DeferredTax": _dp(deferred, "USD 000s", st, "-(reported total tax - current tax), %s" % fy),
         "hist_MinorityShare": _dp(minority, "USD 000s", st,
                                   "reported net income - (EBT + tax): minority interest & other, %s" % fy),
@@ -160,6 +166,23 @@ def scenario_deltas(st):
         out["scn_CogsMarginDelta"] = _dp([-sm, 0.0, sm], "ratio", st,
                                          "bear/bull = +/- 1 relative st.dev. of COGS margin over %d yrs (bounded 1-10%%)"
                                          % len(margins))
+    return out
+
+
+def current_items(st):
+    """Current assets / liabilities not modelled as separate lines, so the
+    analysis sheet's current and quick ratios match the reported balance sheet."""
+    oca, ocl = [], []
+    for y in st.fiscal_years:
+        v = lambda k: st.value(k, y)
+        ca, cl = v("current_assets"), v("current_liabilities")
+        oca.append(None if ca is None else (ca - sum(v(k) or 0 for k in ("cash", "receivables", "inventory"))) / 1000)
+        ocl.append(None if cl is None else (cl - (v("payables") or 0)) / 1000)
+    out = {}
+    if any(x is not None for x in oca):
+        out["hist_OtherCurrentAssets"] = _dp(oca, "USD 000s", st, "AssetsCurrent - (cash + receivables + inventory)")
+    if any(x is not None for x in ocl):
+        out["hist_OtherCurrentLiab"] = _dp(ocl, "USD 000s", st, "LiabilitiesCurrent - accounts payable")
     return out
 
 
@@ -192,6 +215,7 @@ def build(st, terminal_growth, st_long=None):
                         "%s, FY%s balance; %s" % (what, st.fiscal_years[-1],
                                                  method.method if method and v is not None else "not reported -> 0"))
     out.update(below_ebit(st) or {})
+    out.update(current_items(st))
     out.update(scenario_deltas(lng))
     flat = "debt held flat - no scheduled repayment/borrowing (standard simplification)"
     out["drv_DebtRepayment"] = DataPoint(0.0, "USD 000s", "policy", "", flat, AUTO)

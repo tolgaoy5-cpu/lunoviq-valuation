@@ -22,6 +22,8 @@ EXTRA_TAGS = {
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic",
     ],
+    # interest earned on cash & securities (pure interest tags only)
+    "interest_income": ["InvestmentIncomeInterest", "InvestmentIncomeInterestAndDividend", "InterestIncomeOther"],
     # Cash-flow items for forecast drivers (lunoviq/drivers.py)
     "capex": ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsToAcquireProductiveAssets",
               "PaymentsForCapitalImprovements"],

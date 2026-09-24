@@ -53,6 +53,11 @@ def check(ticker, recalc):
         row["comps"] = out["valuation"].get("Trading Comparables")
         row["errors"] = out.get("errors")
         row["dcf_checks"] = out.get("dcf_checks")
+    if recalc:
+        from lunoviq.audit import audit
+        a = audit(res["model"], res["run_json"])
+        row["audit"] = {"lines": a["lines_checked"], "mismatches": len(a["mismatches"]),
+                        "ratio_issues": a["historical_ratio_issues"]}
     row["peers"] = [p["ticker"] for p in rec.get("peers", [])]
     row["peers_skipped"] = rec.get("peers_skipped")
     row["nonop"] = (inp.get("val_NonOpAssets") or {}).get("value")
@@ -78,6 +83,9 @@ def main():
         else:
             c = r.get("dcf_checks") or {}
             f = lambda v, pct=False: "-" if v is None else ("%.2f%%" % (v * 100) if pct else "%.2f" % v)
+            au = r.get("audit") or {}
+            print("%-6s audit %s/%s mism, ratios %s | " % (t, au.get("mismatches"), au.get("lines"),
+                                                          "OK" if au.get("ratio_issues") == [] else au.get("ratio_issues")), end="")
             print("%-6s px %7.2f | WACC %s | DCF %7s | exit %7s | comps %7s [%s] | impl.g %s | EV ok %s | errors %d | health %s"
                   % (t, r["ctl_SharePrice"] or 0, f(r.get("wacc"), True), f(r.get("dcf")), f(r.get("exit")),
                      f(r.get("comps")) if isinstance(r.get("comps"), (int, float)) else r.get("comps"),

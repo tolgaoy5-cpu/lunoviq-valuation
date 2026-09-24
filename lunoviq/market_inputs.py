@@ -87,6 +87,42 @@ def cost_of_debt(st, rf, ratings=None):
                      "rating table unavailable -> risk-free + %.2f%% flat spread" % (spread * 100), AUTO)
 
 
+def financing(st, kd, offline=False):
+    """Financing-schedule inputs (replace the template's demo values):
+        existing debt   effective rate = interest expense / average debt (latest FY)
+        cash            3-month Treasury bill
+        revolver        rate = pre-tax cost of debt; limit 10% of revenue
+        minimum cash    2% of revenue (operating cash, Damodaran's rule of thumb)"""
+    y = st.fiscal_years
+    rev = st.latest("revenue") or 0
+    out = {}
+    interest = abs(st.value("interest_expense", y[-1]) or 0)
+    debts = [d for d in ((st.value("total_debt", y[-2]) if len(y) > 1 else None), st.value("total_debt", y[-1])) if d]
+    eff = interest / (sum(debts) / len(debts)) if (interest and debts) else None
+    if eff is not None and 0.005 <= eff <= 0.15:
+        out["fin_DebtRate"] = DataPoint(round(eff, 4), "ratio", "SEC EDGAR companyfacts", str(y[-1]),
+                                        "interest expense / average total debt (effective rate on existing debt)", AUTO)
+    else:
+        out["fin_DebtRate"] = DataPoint(kd.value, "ratio", kd.source, kd.as_of,
+                                        "effective rate unavailable or outside 0.5-15% -> pre-tax cost of debt", AUTO)
+    if st.latest("interest_income"):
+        try:
+            from .providers.rates import treasury_short_rate
+            out["fin_CashRate"] = treasury_short_rate(offline)
+        except Exception:
+            pass
+    else:
+        out["fin_CashRate"] = DataPoint(0.0, "ratio", "policy", str(y[-1]),
+                                        "interest income not reported separately: it stays inside non-operating "
+                                        "income, so no extra interest on cash (avoids double count)", AUTO)
+    out["fin_RevolverRate"] = DataPoint(kd.value, "ratio", kd.source, kd.as_of, "revolver priced at pre-tax cost of debt", AUTO)
+    out["fin_MinCash"] = DataPoint(round(rev * 0.02 / 1000, 1), "USD 000s", "derived", str(y[-1]),
+                                   "2% of latest revenue (operating cash)", AUTO)
+    out["fin_MaxRevolver"] = DataPoint(round(rev * 0.10 / 1000, 1), "USD 000s", "derived", str(y[-1]),
+                                       "10% of latest revenue", AUTO)
+    return out
+
+
 def capital_weights(st, price):
     shares = st.latest("shares_diluted")
     debt = st.latest("total_debt") or 0.0
@@ -131,6 +167,7 @@ def build(st, prices, rf_providers, erp_provider, offline=False):
     except Exception:
         ratings = None
     out["val_CostOfDebt"] = cost_of_debt(st, rf, ratings)
+    out.update(financing(st, out["val_CostOfDebt"], offline))
     out["drv_TaxRate"] = effective_tax_rate(st)
     mcap, wd, we = capital_weights(st, q.price)
     out["val_DebtWeight"], out["val_EquityWeight"] = wd, we

@@ -57,7 +57,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     out_dir = Path(out_root or _path("paths.output_dir", "output")) / ("%s_%s" % (ticker, stamp))
     out_dir.mkdir(parents=True, exist_ok=True)
     model = out_dir / ("%s_Model.xlsx" % re.sub(r"\W+", "_", ticker))
-    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v6.xlsx")
+    template = _path("paths.template", "Lunoviq_Master_Financial_Model_v7.xlsx")
 
     # 1-2. data -> schema
     fundamentals = providers.get("fundamentals", facts_path=facts_path)
@@ -93,6 +93,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
         peer_list, skipped, peer_src = peer_sel.select(ticker, st.latest("revenue"), st.fiscal_years[-1],
                                                        offline=offline)
         presentation.write_peers(wb, peer_list)
+        presentation.write_benchmarks(wb, ticker, peer_list)
     presentation.clear_precedents(wb)
     presentation.hide_unit_economics(wb)
     presentation.tidy(wb)

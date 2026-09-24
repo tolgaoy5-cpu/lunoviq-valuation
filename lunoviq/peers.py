@@ -91,7 +91,39 @@ def peer_figures(tk, offline=False):
     mcap = price * shares if (price and shares) else None
     ev = mcap + (v("total_debt") or 0) - (v("cash") or 0) if mcap else None
     return {"ticker": tk, "name": st.company, "fy": y, "ev": ev, "market_cap": mcap, "revenue": rev,
-            "ebitda": ebitda, "net_income": v("net_income"), "price": price}
+            "ebitda": ebitda, "net_income": v("net_income"), "price": price, "ratios": ratios(st)}
+
+
+def ratios(st):
+    """Latest-fiscal-year ratios on the same definitions as 07_Analysis_Scenarios."""
+    ys = st.fiscal_years
+    y, p = ys[-1], (ys[-2] if len(ys) > 1 else None)
+    v = lambda k, yr=y: st.value(k, yr)
+    div = lambda a, b: (a / b) if (a is not None and b) else None
+    rev, cogs = v("revenue"), v("cogs") or 0
+    ebitda = lambda yr: (v("revenue", yr) - sum(v(k, yr) or 0 for k in ("cogs", "sga", "other_opex"))
+                         if v("revenue", yr) else None)
+    ta, te = v("total_assets"), v("total_equity")
+    days = lambda bal, base: div((v(bal) or 0) * 365, base)
+    ccc = None
+    if rev:
+        ccc = (days("receivables", rev) or 0) + (days("inventory", cogs) or 0) - (days("payables", cogs) or 0)
+    cl = v("current_liabilities")
+    return {
+        "gross_margin": div(rev - cogs, rev) if rev else None,
+        "ebitda_margin": div(ebitda(y), rev),
+        "net_margin": div(v("net_income"), rev),
+        "roa": div(v("net_income"), ta),
+        "roe": div(v("net_income"), te) if te and te > 0 else None,
+        "asset_turnover": div(rev, ta),
+        "ccc": ccc,
+        "debt_equity": div(v("total_debt") or 0, te) if te and te > 0 else None,
+        "debt_ebitda": div(v("total_debt") or 0, ebitda(y)) if ebitda(y) and ebitda(y) > 0 else None,
+        "current_ratio": div(v("current_assets"), cl),
+        "quick_ratio": div((v("cash") or 0) + (v("receivables") or 0), cl),
+        "revenue_growth": div(rev, v("revenue", p)) - 1 if p and v("revenue", p) else None,
+        "ebitda_growth": (div(ebitda(y), ebitda(p)) - 1) if p and ebitda(p) and ebitda(p) > 0 and ebitda(y) else None,
+    }
 
 
 def select(ticker, target_revenue, target_fy, offline=False, log=None):

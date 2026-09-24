@@ -87,3 +87,31 @@ def print_setup(wb, helper_col=24):
         ws.print_options.horizontalCentered = True
         ws.page_margins.left = ws.page_margins.right = 0.4
         ws.oddFooter.center.text = "&A  |  page &P of &N"
+
+
+AN = "07_Analysis_Scenarios"
+# 07 benchmark rows -> ratio key (same definitions as the sheet's own rows)
+BENCH_ROWS = {25: "ebitda_margin", 26: "debt_ebitda", 27: "roa", 28: "roe",
+              112: "gross_margin", 113: "ebitda_margin", 114: "net_margin", 115: "roa", 116: "roe",
+              117: "asset_turnover", 118: "ccc", 119: "debt_equity", 120: "debt_ebitda",
+              121: "current_ratio", 122: "quick_ratio", 123: "revenue_growth", 124: "ebitda_growth"}
+
+
+def write_benchmarks(wb, ticker, peers):
+    """Peer Low / Median / High from the real peer set (latest fiscal year);
+    the template's demo ranges and 'Industry' column are removed."""
+    import statistics
+    ws = wb[AN]
+    for ref in ("B24", "B111"):
+        _put(ws, ref, "%s 2030E" % ticker)
+    _put(ws, "F111", None)
+    filled = 0
+    for r, key in BENCH_ROWS.items():
+        vals = sorted(p["ratios"][key] for p in peers if p.get("ratios", {}).get(key) is not None)
+        lo, med, hi = (vals[0], statistics.median(vals), vals[-1]) if vals else (None, None, None)
+        for col, val in zip("CDE", (lo, med, hi)):
+            _put(ws, "%s%d" % (col, r), val)
+        if r >= 112:
+            _put(ws, "F%d" % r, None)
+        filled += bool(vals)
+    return filled

@@ -196,3 +196,34 @@ The user asked for accuracy suitable for presenting to a manager, and approved t
   - JNJ: model 229–289 $ against an analyst fair value of 305 $.
   - MSFT: sector-multiple method 624 $ against Morningstar's 600 $.
   - KO: model 45–58 $ against Morningstar's 74 $ (19x EBITDA, where the model uses the industry's 16.9x).
+
+## 2026-09-24: Independent audit and template v7 (session paused here)
+
+- **Independent forecast audit** (`lunoviq/audit.py`): Python rebuilds 190 forecast line-years from the model's inputs and compares them with Excel. Result: 0 mismatches for all 11 companies, for NVDA's bear and bull scenarios, and for a forced revolver stress case. Historical current ratio, net margin and ROE are also checked against SEC figures. The audit runs inside `tools/batch_check.py` and the test suite.
+- **Template v7** (`tools/build_master_v7.py`):
+  1. **Current/quick ratio.** It counted only payables as current liabilities, which put KO at 5.5x against about 1.0x reported. It now includes other current assets and liabilities from SEC data. KO's historical figures are 1.13 / 1.03 / 1.46.
+  2. **Bear/bull free cash flow.** It was EBITDA × 70%, the demo company's rule; it now uses the model's own UFCF/EBITDA ratio.
+  3. **Interest on existing debt.** It now uses the company's effective rate (new input `fin_DebtRate`, `01!C79`). WACC keeps the market cost of debt.
+- **Benchmark tables** (07): the demo "Peer Low/Median/High" data is replaced by the real peers' ratios, the "DemoCo" label by the ticker, and the demo industry column is cleared.
+- **Financing inputs** now come from data instead of the demo values:
+  - cash interest = the 3-month Treasury bill,
+  - revolver rate = the pre-tax cost of debt,
+  - minimum cash = 2% of revenue,
+  - revolver limit = 10% of revenue.
+- **Tests:** 48 passed (`RUN_EXCEL_TESTS=1`).
+- **12-company run:** 11 of 11 healthy with 0 Excel errors, 0 audit mismatches and correct historical ratios.
+
+### Open: pick up here next session
+
+**Interest income is double counted in the forecast.** The historical "non-operating income" line (03 row 18) includes interest income, and that line's average is carried into the forecast. Since v7 the forecast net interest (row 19) also earns interest on cash at the Treasury bill rate, so interest income is counted twice. KO: about $0.6bn a year of net income.
+
+Planned fix (drafted, not applied):
+- Add an `interest_income` tag (`InvestmentIncomeInterest`, `InvestmentIncomeInterestAndDividend`, `InterestIncomeOther`).
+- Write historical net interest into `hist_InterestExpense` (expense − income), and compute non-operating income net of it.
+- If a company doesn't report interest income separately (AAPL, MSFT, PEP, MNST), set `fin_CashRate` to 0 and keep the interest income inside non-operating income.
+- Then rerun `tools/batch_check.py`, `tools/build_report.py`, and republish the report.
+
+**Other open items:**
+- The report page still shows the v6 run.
+- Known simplifications: share buybacks are not modelled, so the forecast cash and current ratio drift upward; tax loss carryforwards use SEC's total, including state and foreign.
+- Web UI (Phase 10) and GitHub publishing come last.

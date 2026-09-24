@@ -40,6 +40,7 @@ LINE_ITEMS = {
     "other_opex":              ("Other Operating Expense", "IS", "USD"),
     "d_and_a":                 ("Depreciation & Amortisation", "IS", "USD"),
     "interest_expense":        ("Interest Expense", "IS", "USD"),
+    "interest_income":         ("Interest Income", "IS", "USD"),
     "current_tax":             ("Current Income Tax", "IS", "USD"),
     "income_tax_total":        ("Income Tax Expense (total)", "IS", "USD"),
     "pretax_income":           ("Pre-tax Income (reported)", "IS", "USD"),
@@ -64,6 +65,8 @@ LINE_ITEMS = {
     "shares_diluted":          ("Shares Outstanding", "Other", "shares"),
     "nonop_investments":       ("Non-operating Investments", "BS", "USD"),
     "minority_interest":       ("Minority Interest", "BS", "USD"),
+    "current_assets":          ("Current Assets (reported)", "BS", "USD"),
+    "current_liabilities":     ("Current Liabilities (reported)", "BS", "USD"),
     "capex":                   ("Capital Expenditure", "CF", "USD"),
     "dividends":               ("Dividends Paid", "CF", "USD"),
 }

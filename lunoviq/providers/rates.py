@@ -39,6 +39,20 @@ class TreasuryProvider(RateProvider):
         raise LookupError("no 10-year yield in Treasury files")
 
 
+def treasury_short_rate(offline=False, column="3 Mo"):
+    """Latest 3-month Treasury bill yield (interest earned on corporate cash)."""
+    year = dt.date.today().year
+    for y in (year, year - 1):
+        body, _ = http.fetch_bytes(TREASURY % (y, y), ttl=config.get("http.ttl_rates", 43200), offline=offline)
+        rows = [r for r in csv.DictReader(io.StringIO(body.decode("utf-8-sig"))) if r.get(column)]
+        if rows:
+            latest = max(rows, key=lambda r: dt.datetime.strptime(r["Date"], "%m/%d/%Y"))
+            d = dt.datetime.strptime(latest["Date"], "%m/%d/%Y").date().isoformat()
+            return DataPoint(round(float(latest[column]) / 100, 6), "ratio", "US Treasury par yield curve",
+                             d, "3-month bill, used for interest on cash", AUTO)
+    raise LookupError("no 3-month yield in Treasury files")
+
+
 class FredProvider(RateProvider):
     name = "fred"
 

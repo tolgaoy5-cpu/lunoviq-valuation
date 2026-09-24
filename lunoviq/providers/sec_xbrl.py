@@ -65,6 +65,9 @@ TAGS = {
     "Operating Income (reported)": ["OperatingIncomeLoss"],
     # DCF ozkaynak koprusu icin: azinlik paylari ozkaynak degerinden dusulur
     "Minority Interest": ["MinorityInterest"],
+    # Cari oranlar icin (07 analiz sayfasi): raporlanan donen varlik / KV yukumluluk
+    "Current Assets (reported)": ["AssetsCurrent"],
+    "Current Liabilities (reported)": ["LiabilitiesCurrent"],
     "Pre-tax Income (reported)": [
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
@@ -162,7 +165,8 @@ ORDER = ["Revenue", "Cost of Goods Sold", "SG&A", "Other Operating Expense",
          "Shares Outstanding",
          "Total Assets (reported)", "Total Liabilities (reported)",
          "Total Equity (reported)", "Operating Income (reported)",
-         "Pre-tax Income (reported)", "Non-operating Investments", "Minority Interest"]
+         "Pre-tax Income (reported)", "Non-operating Investments", "Minority Interest",
+         "Current Assets (reported)", "Current Liabilities (reported)"]
 
 
 class DataError(ValueError):
