@@ -1,0 +1,44 @@
+# Committed defaults. Copy to config/lunoviq.toml (git-ignored) and edit locally.
+
+[sec]
+# SEC EDGAR fair-access policy requires a descriptive User-Agent with a contact.
+user_agent = "Lunoviq Research contact@example.com"
+
+[http]
+cache_dir = ".cache"
+# Seconds a cached response stays fresh. Filings change rarely; prices often.
+ttl_fundamentals = 86400
+ttl_prices = 900
+ttl_rates = 43200
+
+[providers]
+# Each role is served by a pluggable provider (see lunoviq/providers/).
+fundamentals = "sec_edgar"
+prices = "yahoo"
+risk_free = ["treasury", "fred"]      # tried in order
+equity_risk_premium = "damodaran"
+
+[damodaran]
+# Column of Damodaran's monthly implied ERP series to use.
+erp_column = "ERP (T12m with sustainable payout)"
+
+[wacc]
+# Policy choices below are modelling assumptions — review before relying on them.
+beta_months = 60                      # monthly returns vs market index
+market_index = "^GSPC"                # S&P 500
+beta_bounds = [0.3, 2.5]              # outside -> flagged
+beta_adjustment = "none"              # "none" = raw regression beta; "blume" = 0.67*raw + 0.33
+credit_spread = 0.01                  # cost of debt floor = risk-free + spread
+tax_rate_fallback = 0.21              # US federal statutory, used if effective rate unusable
+tax_rate_bounds = [0.0, 0.35]
+
+[paths]
+template = "Lunoviq_Master_Financial_Model_v2.xlsx"
+output_dir = "output"
+overrides_dir = "overrides"
+
+[pipeline]
+recalculate = true                    # needs Microsoft Excel (xlwings)
+years = 3
+# Judgement inputs never auto-filled; left at template value and flagged in 09_Sources.
+review_inputs = ["val_TerminalGrowth", "val_ExitMultiple"]

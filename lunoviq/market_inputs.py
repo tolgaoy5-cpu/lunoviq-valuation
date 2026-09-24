@@ -1,0 +1,122 @@
+"""
+Market and cost-of-capital inputs, each derived from free data with its
+method recorded. Policy parameters (beta window, credit spread, tax bounds)
+come from config [wacc] so they are visible and adjustable, not buried in code.
+
+Inputs that are genuine judgement calls (terminal growth, exit multiple) are
+NOT invented here: they stay at the template value and are flagged for review.
+"""
+import statistics
+
+from . import config
+from .schema import AUTO, MISSING, DataPoint
+
+
+def _returns(hist):
+    by_month = {}
+    for d, c in zip(hist.dates, hist.closes):
+        by_month[d[:7]] = c                          # keep last observation per month
+    months = sorted(by_month)
+    return {m: by_month[m] / by_month[p] - 1 for p, m in zip(months, months[1:])}
+
+
+def beta(stock_hist, market_hist, months):
+    rs, rm = _returns(stock_hist), _returns(market_hist)
+    common = sorted(set(rs) & set(rm))[-months:]
+    if len(common) < 24:
+        return DataPoint(None, "x", stock_hist.source, "", "fewer than 24 overlapping months", MISSING)
+    x = [rm[m] for m in common]
+    y = [rs[m] for m in common]
+    b = statistics.covariance(x, y) / statistics.variance(x)
+    lo, hi = config.get("wacc.beta_bounds", [0.3, 2.5])
+    note = "OLS slope, %d monthly returns vs %s (%s to %s)" % (
+        len(common), market_hist.ticker, common[0], common[-1])
+    if config.get("wacc.beta_adjustment", "none") == "blume":
+        note += "; Blume-adjusted from raw %.4f (0.67 x raw + 0.33)" % b
+        b = 0.67 * b + 0.33
+    if not lo <= b <= hi:
+        note += "; OUTSIDE bounds %s-%s, review" % (lo, hi)
+    return DataPoint(round(b, 4), "x", stock_hist.source, common[-1], note, AUTO)
+
+
+def effective_tax_rate(st):
+    lo, hi = config.get("wacc.tax_rate_bounds", [0.0, 0.35])
+    fallback = config.get("wacc.tax_rate_fallback", 0.21)
+    rates = []
+    for y in st.fiscal_years:
+        tax, pre = st.value("income_tax_total", y), st.value("pretax_income", y)
+        if tax is not None and pre and pre > 0:
+            rates.append(tax / pre)
+    if rates:
+        avg = sum(rates) / len(rates)
+        if lo <= avg <= hi:
+            return DataPoint(round(avg, 4), "ratio", "SEC EDGAR companyfacts",
+                             str(st.fiscal_years[-1]),
+                             "avg IncomeTaxExpenseBenefit / pre-tax income, %d yrs" % len(rates), AUTO)
+    return DataPoint(fallback, "ratio", "config wacc.tax_rate_fallback", "",
+                     "effective rate unavailable or out of bounds -> statutory fallback", AUTO)
+
+
+def cost_of_debt(st, rf):
+    spread = config.get("wacc.credit_spread", 0.01)
+    y = st.fiscal_years
+    interest = st.value("interest_expense", y[-1])
+    debts = [d for d in (st.value("total_debt", y[-2]) if len(y) > 1 else None,
+                         st.value("total_debt", y[-1])) if d]
+    floor = rf.value + spread
+    if interest and debts:
+        implied = abs(interest) / (sum(debts) / len(debts))
+        if implied >= floor:
+            return DataPoint(round(implied, 4), "ratio", "SEC EDGAR companyfacts", str(y[-1]),
+                             "interest expense / average total debt", AUTO)
+        return DataPoint(round(floor, 4), "ratio", "derived", rf.as_of,
+                         "implied %.2f%% below floor -> risk-free + %.2f%% spread"
+                         % (implied * 100, spread * 100), AUTO)
+    return DataPoint(round(floor, 4), "ratio", "derived", rf.as_of,
+                     "no debt data -> risk-free + %.2f%% spread" % (spread * 100), AUTO)
+
+
+def capital_weights(st, price):
+    shares = st.latest("shares_diluted")
+    debt = st.latest("total_debt") or 0.0
+    if not (shares and price.value):
+        m = DataPoint(None, "ratio", "derived", "", "price or share count missing", MISSING)
+        return m, m, m
+    equity = price.value * shares
+    wd = debt / (debt + equity)
+    asof = price.as_of
+    mcap = DataPoint(equity, "USD", "derived", asof, "price x diluted shares (latest FY)", AUTO)
+    return (mcap,
+            DataPoint(round(wd, 4), "ratio", "derived", asof,
+                      "book total debt / (debt + market cap)", AUTO),
+            DataPoint(round(1 - wd, 4), "ratio", "derived", asof, "1 - debt weight", AUTO))
+
+
+def build(st, prices, rf_providers, erp_provider, offline=False):
+    """Return {named_range: DataPoint} for the valuation inputs."""
+    out = {}
+    q = prices.quote(st.ticker, offline=offline)
+    out["ctl_SharePrice"] = q.price
+
+    rf = None
+    for p in rf_providers:
+        try:
+            rf = p.risk_free(offline=offline)
+            break
+        except Exception as e:                            # try the next source
+            last = e
+    if rf is None:
+        raise RuntimeError("no risk-free source available: %s" % last)
+    out["val_RiskFree"] = rf
+    out["val_ERP"] = erp_provider.erp(offline=offline)
+
+    months = config.get("wacc.beta_months", 60)
+    index = config.get("wacc.market_index", "^GSPC")
+    out["val_Beta"] = beta(prices.monthly_history(st.ticker, months, offline=offline),
+                           prices.monthly_history(index, months, offline=offline), months)
+    out["val_CostOfDebt"] = cost_of_debt(st, rf)
+    out["drv_TaxRate"] = effective_tax_rate(st)
+    mcap, wd, we = capital_weights(st, q.price)
+    out["val_DebtWeight"], out["val_EquityWeight"] = wd, we
+    out["_market_cap"] = mcap                             # informational, not written
+    return out

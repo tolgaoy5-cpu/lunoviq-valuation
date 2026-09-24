@@ -1,0 +1,11 @@
+__pycache__/
+.pytest_cache/
+output/
+~$*.xlsx
+.DS_Store
+
+# local config and caches
+config/lunoviq.toml
+.cache/
+* copy.xlsx
+backups/

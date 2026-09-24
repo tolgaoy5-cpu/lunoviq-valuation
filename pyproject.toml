@@ -1,0 +1,17 @@
+[project]
+name = "lunoviq"
+version = "0.2.0"
+description = "Ticker-to-valuation automation: SEC/market data -> standardized schema -> audited Excel financial model"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["openpyxl>=3.1"]
+
+[project.optional-dependencies]
+excel = ["xlwings>=0.30"]        # recalculation through Microsoft Excel
+dev = ["pytest>=8"]
+
+[project.scripts]
+lunoviq = "lunoviq.__main__:main"
+
+[tool.setuptools]
+packages = ["lunoviq", "lunoviq.providers", "lunoviq.excel"]
