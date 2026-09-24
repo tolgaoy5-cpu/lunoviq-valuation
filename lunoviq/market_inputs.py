@@ -31,7 +31,7 @@ def beta(stock_hist, market_hist, months):
     lo, hi = config.get("wacc.beta_bounds", [0.3, 2.5])
     note = "OLS slope, %d monthly returns vs %s (%s to %s)" % (
         len(common), market_hist.ticker, common[0], common[-1])
-    if config.get("wacc.beta_adjustment", "none") == "blume":
+    if config.get("wacc.beta_adjustment", "blume") == "blume":
         note += "; Blume-adjusted from raw %.4f (0.67 x raw + 0.33)" % b
         b = 0.67 * b + 0.33
     if not lo <= b <= hi:
@@ -57,23 +57,34 @@ def effective_tax_rate(st):
                      "effective rate unavailable or out of bounds -> statutory fallback", AUTO)
 
 
-def cost_of_debt(st, rf):
+def interest_coverage(st):
+    """EBIT / interest expense for the latest fiscal year (EBIT = reported operating income)."""
+    y = st.fiscal_years[-1]
+    ebit = st.value("operating_income", y)
+    if ebit is None and st.value("pretax_income", y) is not None:
+        ebit = st.value("pretax_income", y) + abs(st.value("interest_expense", y) or 0)
+    interest = abs(st.value("interest_expense", y) or 0)
+    if ebit is None:
+        return None
+    return float("inf") if interest == 0 else ebit / interest
+
+
+def cost_of_debt(st, rf, ratings=None):
+    """Pre-tax cost of debt = risk-free + default spread of the synthetic rating
+    implied by interest coverage (Damodaran). Falls back to a flat spread if the
+    rating table is unavailable."""
+    cov = interest_coverage(st)
+    if ratings and cov is not None:
+        table, asof = ratings
+        for lo, hi, rating, spread in table:
+            if lo < cov <= hi or (cov == float("inf") and hi >= 100000):
+                return DataPoint(round(rf.value + spread, 4), "ratio",
+                                 "Damodaran synthetic rating (%s) + risk-free" % asof, rf.as_of,
+                                 "interest coverage %.1fx -> %s, spread %.2f%%"
+                                 % (min(cov, 99999), rating, spread * 100), AUTO)
     spread = config.get("wacc.credit_spread", 0.01)
-    y = st.fiscal_years
-    interest = st.value("interest_expense", y[-1])
-    debts = [d for d in (st.value("total_debt", y[-2]) if len(y) > 1 else None,
-                         st.value("total_debt", y[-1])) if d]
-    floor = rf.value + spread
-    if interest and debts:
-        implied = abs(interest) / (sum(debts) / len(debts))
-        if implied >= floor:
-            return DataPoint(round(implied, 4), "ratio", "SEC EDGAR companyfacts", str(y[-1]),
-                             "interest expense / average total debt", AUTO)
-        return DataPoint(round(floor, 4), "ratio", "derived", rf.as_of,
-                         "implied %.2f%% below floor -> risk-free + %.2f%% spread"
-                         % (implied * 100, spread * 100), AUTO)
-    return DataPoint(round(floor, 4), "ratio", "derived", rf.as_of,
-                     "no debt data -> risk-free + %.2f%% spread" % (spread * 100), AUTO)
+    return DataPoint(round(rf.value + spread, 4), "ratio", "derived", rf.as_of,
+                     "rating table unavailable -> risk-free + %.2f%% flat spread" % (spread * 100), AUTO)
 
 
 def capital_weights(st, price):
@@ -114,7 +125,12 @@ def build(st, prices, rf_providers, erp_provider, offline=False):
     index = config.get("wacc.market_index", "^GSPC")
     out["val_Beta"] = beta(prices.monthly_history(st.ticker, months, offline=offline),
                            prices.monthly_history(index, months, offline=offline), months)
-    out["val_CostOfDebt"] = cost_of_debt(st, rf)
+    try:
+        from .providers.rates import DamodaranRatingsProvider
+        ratings = DamodaranRatingsProvider().table(offline=offline)
+    except Exception:
+        ratings = None
+    out["val_CostOfDebt"] = cost_of_debt(st, rf, ratings)
     out["drv_TaxRate"] = effective_tax_rate(st)
     mcap, wd, we = capital_weights(st, q.price)
     out["val_DebtWeight"], out["val_EquityWeight"] = wd, we

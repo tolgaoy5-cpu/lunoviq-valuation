@@ -27,7 +27,11 @@ TAGS = {
                 "Revenues", "SalesRevenueNet", "SalesRevenueGoodsNet"],
     "Cost of Goods Sold": ["CostOfGoodsAndServicesSold", "CostOfRevenue", "CostOfGoodsSold"],
     "SG&A": ["SellingGeneralAndAdministrativeExpense",
-             "GeneralAndAdministrativeExpense"],
+             "GeneralAndAdministrativeExpense",
+             # Son care: SG&A'yi ayri raporlamayan sirketler (orn. MNST) toplam
+             # faaliyet giderini verir. Ar-Ge'si olan sirketlerde SG&A etiketi zaten
+             # bulundugu icin buraya dusulmez.
+             "OperatingExpenses"],
     "Other Operating Expense": ["OtherCostAndExpenseOperating",
                                 "OtherOperatingIncomeExpenseNet",
                                 "ResearchAndDevelopmentExpense"],
@@ -35,13 +39,13 @@ TAGS = {
                                     "DepreciationAmortizationAndAccretionNet",
                                     "DepreciationAndAmortization", "Depreciation"],
     "Interest Expense": ["InterestExpense", "InterestExpenseDebt",
+                         "InterestExpenseNonoperating",          # 2024+ taksonomi (orn. AMZN)
                          "InterestIncomeExpenseNet"],
-    "Current Income Tax": ["CurrentIncomeTaxExpenseBenefit",
-                           "CurrentFederalTaxExpenseBenefit"],
     "Net Income": ["NetIncomeLoss", "ProfitLoss"],
     "Cash & Equivalents": ["CashAndCashEquivalentsAtCarryingValue",
                            "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
-    "Accounts Receivable": ["AccountsReceivableNetCurrent", "ReceivablesNetCurrent"],
+    "Accounts Receivable": ["AccountsReceivableNetCurrent", "ReceivablesNetCurrent",
+                            "AccountsNotesAndLoansReceivableNetCurrent"],   # orn. PEP
     "Inventory": ["InventoryNet", "InventoryFinishedGoods"],
     "PP&E (net)": ["PropertyPlantAndEquipmentNet"],
     # Isletme sermayesi (DPO) icin SAF ticari borc gerekir. AP+tahakkuk eden
@@ -59,6 +63,12 @@ TAGS = {
     "Total Equity (reported)": ["StockholdersEquity",
                                 "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
     "Total Liabilities (reported)": ["Liabilities"],
+    # Gelir tablosunu raporlanan faaliyet karina baglamak icin (asagidaki mutabakat)
+    "Operating Income (reported)": ["OperatingIncomeLoss"],
+    "Pre-tax Income (reported)": [
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic"],
 }
 # toplanarak elde edilenler
 # Once tek etiketle dene (sirket toplami zaten veriyorsa onu kullan),
@@ -80,12 +90,24 @@ SUMS = {
             (["LongTermDebt"], ["DebtCurrent"]),
         ],
     },
+    # Cari vergi: toplam etiket yoksa federal + eyalet + yabanci toplanir.
+    # (AMZN 2025'te yalniz federal etiketi var; tek basina almak tanimi yillar
+    # arasinda karistiriyordu.)
+    "Current Income Tax": {
+        "single": [],
+        "recipes": [
+            (["CurrentIncomeTaxExpenseBenefit"], []),
+            (["CurrentFederalTaxExpenseBenefit"],
+             ["CurrentStateAndLocalTaxExpenseBenefit", "CurrentForeignTaxExpenseBenefit"]),
+        ],
+    },
     "Common Equity": {
         "single": [],
         "recipes": [
             (["CommonStockValue", "AdditionalPaidInCapital"], []),
             (["CommonStockValue", "AdditionalPaidInCapitalCommonStock"], []),
             (["CommonStocksIncludingAdditionalPaidInCapital"], []),
+            (["CommonStockValueOutstanding", "AdditionalPaidInCapitalCommonStock"], []),   # orn. MNST
             (["CommonStockValue"], []),
         ],
     },
@@ -105,7 +127,12 @@ ORDER = ["Revenue", "Cost of Goods Sold", "SG&A", "Other Operating Expense",
          "Common Equity", "Retained Earnings", "Tax Loss Carryforward",
          "Shares Outstanding",
          "Total Assets (reported)", "Total Liabilities (reported)",
-         "Total Equity (reported)"]
+         "Total Equity (reported)", "Operating Income (reported)",
+         "Pre-tax Income (reported)"]
+
+
+class DataError(ValueError):
+    """Sirketin SEC verisi modeli kurmaya yetmiyor."""
 
 
 # ---------------------------------------------------------------- ag katmani
@@ -146,10 +173,16 @@ def fiscal_year_ends(facts):
     Gelir kaleminin yillik (330-400 gun) kayitlarindan turetilir. 52/53 haftalik
     takvim kullanan sirketlerde tarih her yil birkac gun kayar; bu yuzden sabit
     bir ay/gun varsaymak yerine gercek tarihler toplanir.
+
+    Duzeltme (2026-09): eskiden ILK bulunan etiketin yillariyla yetiniliyordu.
+    Sirket etiket degistirdiginde (orn. NVDA 2022'de) sonraki yillar kayboluyor,
+    bilanco kalemleri de bu yuzden eslesemiyordu. Artik tum gelir etiketleri
+    birlestirilir ve yalnizca 10-K kayitlari kullanilir (10-Q'daki 12 aylik
+    kayitlar kapanmamis bir mali yil uretmesin).
     """
     ends = {}
-    for tag in TAGS["Revenue"] + ["Revenues", "NetIncomeLoss"]:
-        for taxo in ("us-gaap", "ifrs-full"):
+    for taxo in ("us-gaap", "ifrs-full"):
+        for tag in TAGS["Revenue"] + ["Revenues", "NetIncomeLoss"]:
             node = facts.get("facts", {}).get(taxo, {}).get(tag)
             if not node:
                 continue
@@ -157,7 +190,7 @@ def fiscal_year_ends(facts):
                 if unit != "USD":
                     continue
                 for r in rows:
-                    if "start" not in r:
+                    if "start" not in r or not r.get("form", "").startswith("10-K"):
                         continue
                     d0 = dt.date.fromisoformat(r["start"])
                     d1 = dt.date.fromisoformat(r["end"])
@@ -168,7 +201,7 @@ def fiscal_year_ends(facts):
                     if y not in ends or r["end"] > ends[y]:
                         ends[y] = r["end"]
         if ends:
-            break
+            break                                  # us-gaap bulunduysa ifrs'e bakma
     return ends
 
 
@@ -221,19 +254,33 @@ def annual_series(facts, tag, fye):
 
 
 def pick(facts, tags, fye):
-    """Oncelik sirasina gore ilk dolu seriyi dondurur."""
+    """Her yil icin, o yili iceren en oncelikli etiketin degeri.
+
+    Eskiden ilk dolu seri butunuyle alinirdi; sirket etiket degistirince
+    (orn. WMT amortisman, TSLA amortisman, AMZN vergi) son yillar bos kaliyordu.
+    Donen etiket metni yil sirasiyla kullanilan etiketleri ' | ' ile listeler.
+    """
+    merged, notes = {}, {}
     for t in tags:
         s, used = annual_series(facts, t, fye)
-        if s:
-            return s, used
-    return {}, None
+        for y, v in s.items():
+            if y not in merged:
+                merged[y], notes[y] = v, used
+    if not merged:
+        return {}, None
+    uniq = []
+    for y in sorted(notes):
+        if notes[y] not in uniq:
+            uniq.append(notes[y])
+    return merged, " | ".join(uniq)
 
 
 def build_feed(facts, n_years=3):
     """{kalem: {yil: deger}} + hangi etiketin kullanildigi."""
     fye = fiscal_year_ends(facts)
     if not fye:
-        raise SystemExit("Mali yil sonu tarihleri bulunamadi - gelir kalemi eksik olabilir.")
+        raise DataError("SEC companyfacts icinde 10-K gelir kaydi yok (mali yil sonu bulunamadi). "
+                        "Sirket yillik veriyi XBRL'de yayinlamamis olabilir.")
     series, used = {}, {}
     for item in ORDER:
         if item in TAGS:
@@ -309,6 +356,35 @@ def build_feed(facts, n_years=3):
             ol[y] = tl - sum(parts_l)
         if te is not None and all(p is not None for p in parts_e):
             oe[y] = te - sum(parts_e)
+    # ---- Faaliyet gideri mutabakati ------------------------------------------
+    # Sablonun gider kalemleri (COGS, SG&A, Diger) sirketlerin raporladigi
+    # kategorileri kapsamiyor (orn. AMZN: fulfillment, teknoloji, pazarlama) ve
+    # cogu sirket amortismani COGS/SG&A icinde raporluyor. Standart normalizasyon:
+    #     EBITDA = raporlanan faaliyet kari + amortisman
+    # "Diger faaliyet gideri" bu EBITDA'ya ulastiran denklestirici kalem olur;
+    # boylece tarihsel EBIT = raporlanan faaliyet kari. Amortisman gomuluyse
+    # kalem NEGATIF cikar (geri ekleme) - bu dogrudur, cift sayimi onler.
+    # Faaliyet kari raporlamayan sirketler (orn. JNJ) icin yaklasik:
+    #     faaliyet kari ~ vergi oncesi kar + faiz gideri
+    recon, how = {}, set()
+    for y in sorted(set(series.get("Operating Income (reported)", {})) |
+                    set(series.get("Pre-tax Income (reported)", {}))):
+        oi = g("Operating Income (reported)", y)
+        if oi is None and g("Pre-tax Income (reported)", y) is not None:
+            oi = g("Pre-tax Income (reported)", y) + abs(g("Interest Expense", y) or 0)
+            how.add("vergi oncesi kar + faiz gideri")
+        elif oi is not None:
+            how.add("OperatingIncomeLoss")
+        rev, da = g("Revenue", y), g("Depreciation & Amortisation", y)
+        if None in (oi, rev, da):
+            continue
+        recon[y] = rev - (g("Cost of Goods Sold", y) or 0) - (g("SG&A", y) or 0) - (oi + da)
+    if recon:
+        tagged = series.get("Other Operating Expense", {})
+        series["Other Operating Expense"] = {**tagged, **recon}
+        used["Other Operating Expense"] = ("Revenue - COGS - SG&A - (faaliyet kari + D&A) "
+                                           "[mutabakat kalemi; faaliyet kari: %s]" % ", ".join(sorted(how)))
+
     series["Other Assets (plug)"] = oa
     series["Other Liabilities (plug)"] = ol
     series["Other Equity (plug)"] = oe
@@ -316,7 +392,12 @@ def build_feed(facts, n_years=3):
     used["Other Liabilities (plug)"] = "Liabilities - (AP+Debt+DTL)"
     used["Other Equity (plug)"] = "StockholdersEquity - (Common+Retained)"
 
-    years = sorted({fy for s in series.values() for fy in s})[-n_years:]
+    # Yillar: 10-K'si olan ve geliri bulunan mali yillar. Eskiden tum serilerin
+    # birlesimi aliniyordu; tek bir kalemde gorulen kapanmamis yil (orn. AMZN
+    # "2026") modele giriyordu.
+    years = sorted(y for y in fye if y in series.get("Revenue", {}))[-n_years:]
+    if not years:
+        raise DataError("10-K gelir verisi bulunamadi.")
     return series, used, years
 
 
@@ -349,13 +430,15 @@ def write_model(path_in, path_out, company, cik, series, used, years):
 
     # --- 01_Inputs tarihsel blogunu besle (isaret kurallariyla)
     inp = wb["01_Inputs_Historicals"]
-    def put(row, item, sign=1):
+    def put(row, item, sign=1, keep_sign=False):
         for i, y in enumerate(years):
             v = to_thousands(item, series[item].get(y))
-            inp.cell(row=row, column=2 + i).value = None if v is None else sign * abs(v) if sign < 0 else v
+            if v is not None and sign < 0:
+                v = sign * v if keep_sign else sign * abs(v)
+            inp.cell(row=row, column=2 + i).value = v
     put(18, "Revenue")
     put(19, "SG&A", -1)
-    put(20, "Other Operating Expense", -1)
+    put(20, "Other Operating Expense", -1, keep_sign=True)   # mutabakat kalemi negatif olabilir
     put(21, "Depreciation & Amortisation", -1)
     put(22, "Interest Expense", -1)
     put(23, "Current Income Tax", -1)
@@ -395,7 +478,7 @@ def write_model(path_in, path_out, company, cik, series, used, years):
         fill(43, abs(sga[-1]) / rev[-1])           # SG&A % gelir
     ox = next((v for v in reversed(oox) if v), None)
     if rev[-1] and ox:
-        fill(44, abs(ox) / rev[-1])                # diger faaliyet gideri % gelir
+        fill(44, ox / rev[-1])                     # diger faaliyet gideri % gelir (isaretli)
     elif rev[-1]:
         fill(44, 0.0)                              # veri yoksa sifirla (demo degeri kalmasin)
 
@@ -437,7 +520,10 @@ def main():
             print("Ham JSON kaydedildi: %s" % a.save_json)
     company = facts.get("entityName", a.ticker)
 
-    series, used, years = build_feed(facts, a.years)
+    try:
+        series, used, years = build_feed(facts, a.years)
+    except DataError as e:
+        raise SystemExit("%s: %s" % (a.ticker, e))
     missing = [k for k, v in used.items() if v == "BULUNAMADI"]
 
     out = a.out or "%s_Model.xlsx" % re.sub(r"\W+", "_", company)[:40]

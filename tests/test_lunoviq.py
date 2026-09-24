@@ -28,6 +28,7 @@ def test_sec_provider_maps_to_schema(ko):
     assert dp.value == 47_941_000_000 and dp.source == "SEC EDGAR companyfacts" and dp.method
     assert ko.value("income_tax_total", 2025) == 2_861_000_000
     assert ko.missing() == ["total_liabilities"]
+    assert ko.value("operating_income", 2025) is not None
     json.dumps(ko.to_dict())                                  # serialisable for run.json
 
 
@@ -45,14 +46,39 @@ def test_beta_recovers_known_slope():
     mkt = [0.01 * ((i * 7) % 11 - 5) for i in range(60)]
     stock = [1.5 * r + 0.001 for r in mkt]
     b = market_inputs.beta(_hist("X", stock), _hist("^GSPC", mkt), 60)
-    assert b.value == pytest.approx(1.5, abs=1e-6) and b.status == AUTO
+    assert b.value == pytest.approx(0.67 * 1.5 + 0.33, abs=1e-4) and b.status == AUTO   # Blume default
+    assert "raw 1.5000" in b.method
 
 
-def test_cost_of_debt_floor_and_tax_fallback(ko):
+RATINGS = ([(-100000, 0.199999, "D2/D", 0.19), (3, 4.249999, "A3/A-", 0.0089),
+            (4.25, 5.499999, "A2/A", 0.0078), (6.5, 8.499999, "Aa2/AA", 0.0055),
+            (8.5, 100000, "Aaa/AAA", 0.004)], "January 2026")
+
+
+def test_cost_of_debt_synthetic_rating(ko):
     rf = DataPoint(0.05, "ratio", "t", "2026-01-01")
-    kd = market_inputs.cost_of_debt(ko, rf)
-    assert kd.value == pytest.approx(0.06) and "floor" in kd.method      # KO implied 3.67% < 6%
+    cov = market_inputs.interest_coverage(ko)
+    assert 6.5 < cov < 8.5                                       # KO: EBIT ~13.8bn / interest ~1.65bn
+    kd = market_inputs.cost_of_debt(ko, rf, RATINGS)
+    assert kd.value == pytest.approx(0.0555) and "Aa2/AA" in kd.method
+    assert market_inputs.cost_of_debt(ko, rf, None).value == pytest.approx(0.06)   # flat fallback
+
+
+def test_effective_tax_rate(ko):
     assert market_inputs.effective_tax_rate(ko).value == pytest.approx(0.1796, abs=1e-4)
+
+
+def test_ratings_parser(monkeypatch):
+    row = "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td></td><td>x</td></tr>"
+    page = "Data used is as of January 2026<table>" + "".join(
+        row % (lo, hi, r, sp) for lo, hi, r, sp in
+        [(-100000, 0.2, "D2/D", "19.00%"), (0.2, 0.65, "C2/C", "16.00%"), (0.65, 0.8, "Ca2/CC", "12.61%"),
+         (0.8, 1.25, "Caa/CCC", "8.85%"), (1.25, 1.5, "B3/B-", "5.09%"), (1.5, 1.75, "B2/B", "3.21%"),
+         (1.75, 2, "B1/B+", "2.75%"), (2, 2.25, "Ba2/BB", "1.84%"), (2.25, 2.5, "Ba1/BB+", "1.38%"),
+         (2.5, 3, "Baa2/BBB", "1.11%"), (8.5, 100000, "Aaa/AAA", "0.40%")]) + "</table>"
+    monkeypatch.setattr(http, "fetch_bytes", lambda *a, **k: (page.encode("latin-1"), 0))
+    table, asof = rates.DamodaranRatingsProvider().table()
+    assert asof == "January 2026" and table[-1] == (8.5, 100000.0, "Aaa/AAA", 0.004)
 
 
 def test_capital_weights(ko):

@@ -23,12 +23,15 @@ equity_risk_premium = "damodaran"
 erp_column = "ERP (T12m with sustainable payout)"
 
 [wacc]
-# Policy choices below are modelling assumptions — review before relying on them.
+# Industry-standard defaults (change only with a reason):
+#   beta: 5y monthly regression vs S&P 500, Blume-adjusted (as Bloomberg "adjusted beta")
+#   cost of debt: risk-free + default spread of the synthetic rating implied by
+#                 interest coverage (Damodaran, large non-financial firms table)
 beta_months = 60                      # monthly returns vs market index
 market_index = "^GSPC"                # S&P 500
 beta_bounds = [0.3, 2.5]              # outside -> flagged
-beta_adjustment = "none"              # "none" = raw regression beta; "blume" = 0.67*raw + 0.33
-credit_spread = 0.01                  # cost of debt floor = risk-free + spread
+beta_adjustment = "blume"             # "blume" = 0.67*raw + 0.33 ; "none" = raw regression beta
+credit_spread = 0.01                  # fallback only, if the ratings table cannot be fetched
 tax_rate_fallback = 0.21              # US federal statutory, used if effective rate unusable
 tax_rate_bounds = [0.0, 0.35]
 

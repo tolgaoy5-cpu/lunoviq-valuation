@@ -77,3 +77,30 @@ class DamodaranProvider(EquityRiskPremiumProvider):
                 latest = r
         return DataPoint(float(latest[i]), "ratio", "Damodaran implied ERP (NYU Stern)",
                          latest[0].date().isoformat(), header[i], AUTO)
+
+
+RATINGS = "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/ratings.html"
+
+
+class DamodaranRatingsProvider:
+    """Interest-coverage -> synthetic rating -> default spread (large non-financial firms)."""
+    name = "damodaran_ratings"
+
+    def table(self, offline=False):
+        import html as _html
+
+        body, _ = http.fetch_bytes(RATINGS, ttl=30 * 86400, offline=offline)
+        page = body.decode("latin-1")
+        asof = re.search(r"Data used is as of ([A-Za-z]+ \d{4})", page)
+        rows = []
+        for tr in re.findall(r"<tr.*?</tr>", page, re.S | re.I):
+            cells = [re.sub(r"\s+", " ", _html.unescape(re.sub(r"<[^>]+>", "", c))).strip()
+                     for c in re.findall(r"<td.*?</td>", tr, re.S | re.I)]
+            if len(cells) >= 4 and cells[3].endswith("%"):
+                try:
+                    rows.append((float(cells[0]), float(cells[1]), cells[2], float(cells[3].rstrip("%")) / 100))
+                except ValueError:
+                    continue
+        if len(rows) < 10:
+            raise LookupError("could not parse Damodaran ratings table (%d rows)" % len(rows))
+        return sorted(rows), (asof.group(1) if asof else "")
