@@ -331,3 +331,16 @@ Agreed with the user: professional analysts compare the sources and choose one, 
   - KDP: consensus DCF $79.69, flagged. With 5% guidance, DCF $41.52.
   - Audit 190/190, checks OK.
 - **Tests:** parser, priority, misaligned consensus, flags, pipeline injection, web override.
+
+## 2026-09-25: 12-company live check with consensus growth
+
+`tools/batch_check.py` now also reports the growth path and its source.
+
+- **Checked:** KO, PEP, AAPL, MSFT, NVDA, WMT, MNST, JNJ, GOOGL, AMZN, TSLA and KDP.
+- **Result:** all 12 have consensus found and aligned with SEC, 0 Excel errors, audit 190/190, health OK. No Excel prompt, no hang, no orphan instances.
+- **Effect on valuations.** DCF moved toward the market price where consensus exceeds history:
+  - NVDA $82 → $201 (price $225),
+  - GOOGL $153 → $216,
+  - MSFT $257 → $331,
+  - AAPL $111 → $140.
+- **Flagged for review:** AAPL, NVDA, GOOGL and KDP, where year-1 consensus is more than 10 points from history. KDP's +58% comes from an acquisition, so enter guidance there.

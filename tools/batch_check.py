@@ -60,6 +60,11 @@ def check(ticker, recalc):
                         "ratio_issues": a["historical_ratio_issues"]}
     row["peers"] = [p["ticker"] for p in rec.get("peers", [])]
     row["peers_skipped"] = rec.get("peers_skipped")
+    g = inp.get("gm_RevenueGrowth") or {}
+    row["growth"] = g.get("value")
+    row["growth_method"] = g.get("method", "")
+    row["growth_history"] = (inp.get("_growth_history") or {}).get("value")
+    row["growth_consensus"] = (inp.get("_growth_consensus_y1") or {}).get("value")
     row["nonop"] = (inp.get("val_NonOpAssets") or {}).get("value")
     row["industry"] = (inp.get("val_ExitMultiple") or {}).get("method", "")
     return row
@@ -91,6 +96,10 @@ def main():
                      f(r.get("comps")) if isinstance(r.get("comps"), (int, float)) else r.get("comps"),
                      ",".join(r["peers"]), f(c.get("implied_terminal_growth"), True), c.get("ev_match"),
                      len(r.get("errors") or []), r.get("health")), flush=True)
+            gr = r.get("growth") or []
+            print("       growth %s | hist %s cons %s | %s" % (" ".join("%.1f%%" % (x * 100) for x in gr),
+                  f(r.get("growth_history"), True), f(r.get("growth_consensus"), True),
+                  "REVIEW" if "review" in r.get("growth_method", "") else "ok"), flush=True)
     out = ROOT / "output" / ("batch_check_%s.json" % dt.datetime.now().strftime("%Y%m%d-%H%M"))
     out.write_text(json.dumps(rows, indent=2, default=str))
     print("\nSaved", out)
