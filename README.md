@@ -72,8 +72,9 @@ module; the pipeline and Excel layer do not change.
 - **Every number is traceable.** Each value carries its source, date, and
   derivation, both in the workbook and in `run.json`.
 - **Judgement stays with the analyst.** Inputs with no objectively correct
-  value (terminal growth, exit multiple) are never invented. They stay at the
-  template value, are highlighted for review, and can be overridden:
+  value use a documented standard default and are flagged for review: terminal
+  growth is 2.5%, and the exit multiple is the industry EV/EBITDA. Both can be
+  overridden in the web app or on the command line:
   ```
   python -m lunoviq run KO --set val_TerminalGrowth=0.02 --set val_ExitMultiple=18
   ```
@@ -128,30 +129,35 @@ docs/                    workbook inventory, architecture, change log
 edgar_feed.py, peer_fetch.py   original CLIs (still supported)
 ```
 
-## Status and roadmap
+## Status
 
-These phases are done:
-- Workbook inventory.
-- Merged master template.
-- Excel recalculation.
-- Provider architecture.
-- WACC inputs from market data.
-- Audit trail.
+**Done:**
+- Workbook inventory and the merged master template (versions v2 to v7).
+- Provider architecture and standard WACC:
+  - Blume-adjusted beta,
+  - Damodaran synthetic-rating cost of debt,
+  - Treasury risk-free rate,
+  - Damodaran equity risk premium.
+- Data-driven forecast drivers.
+- Net income reconciled to reported figures.
+- A three-method valuation:
+  - DCF by perpetuity growth,
+  - DCF by industry exit multiple,
+  - trading comparables with automatic or analyst-chosen peers.
+- Reverse DCF.
+- Independent audit: Python recomputes the whole 5-year forecast and matches Excel.
+- The web app.
 
-These are next:
-1. Reconcile historical net income to reported figures.
-2. Validate the 3-statement model.
-3. Validate DCF, sensitivity, comparables, and scenarios.
-4. Center the sensitivity axis on the computed WACC.
-5. Base forecast drivers on data.
-6. Dashboard outputs.
-7. A simple UI.
+**Next:** publishing (GitHub), licensed data providers for commercial use, and precedent-transaction data.
 
-See `docs/CHANGELOG.md`.
+See `docs/CHANGELOG.md` for every change and its reasoning.
 
 ## Limitations
 
-- US SEC filers only; annual data only.
+- US SEC filers only; annual data only. Some companies are unsupported because
+  SEC's XBRL data for them is incomplete (for example XOM).
 - Yahoo data is unofficial and not for commercial redistribution.
-- Forecast drivers are currently history-based placeholders. They are flagged
-  in `09_Sources` and are analyst assumptions, not outputs.
+- Forecast drivers are mechanical (history-based) defaults; they are analyst
+  assumptions, flagged in `09_Sources` and in the app.
+- There is no free source for precedent transactions, so that method shows as n/a.
+- Share buybacks are not modelled, so forecast cash builds up.
