@@ -35,11 +35,12 @@ RUN_DIR_RE = re.compile(r"^[A-Z0-9.\-]{1,10}_\d{8}-\d{4,6}$")
 TICKER_RE = re.compile(r"^[A-Za-z0-9.\-]{1,10}$")
 # UI field -> (named range, lower bound, upper bound)
 OVERRIDES = {
+    "year1_growth": ("drv_Year1Growth", -0.30, 0.60),
     "revenue_growth": ("gm_RevenueGrowth", -0.30, 0.60),
     "terminal_growth": ("val_TerminalGrowth", -0.02, 0.05),
     "exit_multiple": ("val_ExitMultiple", 1.0, 80.0),
 }
-LABELS = {"revenue_growth": "Revenue growth", "terminal_growth": "Terminal growth",
+LABELS = {"year1_growth": "Year-1 growth", "revenue_growth": "Revenue growth", "terminal_growth": "Terminal growth",
           "exit_multiple": "Exit multiple"}
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png"}

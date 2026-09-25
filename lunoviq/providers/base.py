@@ -40,3 +40,11 @@ class EquityRiskPremiumProvider(ABC):
     @abstractmethod
     def erp(self, offline=False):
         """-> schema.DataPoint (decimal)"""
+
+
+class EstimatesProvider(ABC):
+    name = "abstract"
+
+    @abstractmethod
+    def revenue(self, ticker, offline=False):
+        """-> {last_fy_end, last_revenue, y1_revenue, y1_growth, y2_revenue, y2_growth, analysts, source}"""

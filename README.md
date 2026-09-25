@@ -38,7 +38,10 @@ The app opens at `http://127.0.0.1:8765`. It runs locally only and uses the Pyth
   - peers and benchmarks,
   - checks and the independent audit,
   - every input's source.
-- Editing the key assumptions (revenue growth, terminal growth, exit multiple) and rebuilding.
+- Revenue growth sources side by side: analyst consensus, company guidance (your
+  input) and history, with the one used marked and large gaps flagged.
+- Editing the key assumptions (year-1 growth from company guidance, terminal growth,
+  exit multiple) and rebuilding.
 - Downloading the Excel model, or opening it in Excel.
 
 The interface is in English, with light and dark themes and a phone layout. The app stays running in the background until you choose **Quit** in the top bar.
@@ -58,12 +61,29 @@ The interface is in English, with light and dark themes and a phone layout. The 
 |---|---|---|
 | Financial statements | SEC EDGAR companyfacts (XBRL) | Official, US filers. Prioritized tag mapping with fiscal-year and duration checks. |
 | Share price, beta | Yahoo Finance chart API | Free/unofficial, so for personal use only. Swap for a licensed vendor commercially. |
+| Analyst consensus (revenue, next 2 years) | stockanalysis.com forecast page | Free/unofficial, cached for a day. Optional: if it is missing or refers to another fiscal year, growth falls back to history and is flagged. |
 | Risk-free rate | US Treasury yield curve, with FRED DGS10 as fallback | 10-year constant maturity |
 | Equity risk premium | Damodaran implied ERP (NYU Stern) | Monthly |
 
 Providers implement small interfaces (`lunoviq/providers/base.py`) and are
 selected in `config/lunoviq.toml`. Adding a paid vendor means adding one
 module; the pipeline and Excel layer do not change.
+
+## Revenue growth
+
+- **Year 1:** your company-guidance input if given, otherwise analyst consensus,
+  otherwise the company's own 5-year CAGR (flagged for review).
+- **Year 2:** analyst consensus when available.
+- **Later years** fade linearly to terminal growth by year 5.
+- **Alignment check.** Consensus is only used when its last reported year and
+  revenue match the SEC data.
+- **Flags.** A year-1 figure more than 10 points from history is flagged
+  (acquisitions, divestitures, one-offs), and so is guidance far from consensus.
+  In that case consensus year 2 is not used, because it builds on consensus year 1.
+
+```
+python -m lunoviq run KDP --set drv_Year1Growth=0.05
+```
 
 ## Design principles
 

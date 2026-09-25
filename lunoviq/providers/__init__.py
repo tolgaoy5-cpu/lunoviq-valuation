@@ -1,5 +1,6 @@
 """Provider registry: role -> implementation, chosen in config/lunoviq.toml [providers]."""
 from .. import config
+from .estimates import StockAnalysisEstimates
 from .rates import DamodaranProvider, FredProvider, TreasuryProvider
 from .sec_edgar import SecEdgarProvider
 from .yahoo import YahooProvider
@@ -9,9 +10,11 @@ REGISTRY = {
     "prices": {"yahoo": YahooProvider},
     "risk_free": {"treasury": TreasuryProvider, "fred": FredProvider},
     "equity_risk_premium": {"damodaran": DamodaranProvider},
+    "estimates": {"stockanalysis": StockAnalysisEstimates},
 }
 DEFAULTS = {"fundamentals": "sec_edgar", "prices": "yahoo",
-            "risk_free": ["treasury", "fred"], "equity_risk_premium": "damodaran"}
+            "risk_free": ["treasury", "fred"], "equity_risk_premium": "damodaran",
+            "estimates": "stockanalysis"}
 
 
 def get(role, **kwargs):

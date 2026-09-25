@@ -304,3 +304,30 @@ Requested by the user after comparing our sheets with the CFI model.
   - **Time limit.** Excel is driven from a child process with a 180 s limit. On timeout, the child and its hidden Excel are stopped and `RecalcTimeout` is raised. The web UI shows it as "Excel did not respond…" (retryable).
     - Before this, a pending Apple event in a thread relaunched Excel after it was killed, which left hidden orphan instances behind.
   - The user's own Excel is never touched.
+
+## 2026-09-25: Revenue growth from analyst consensus and company guidance
+
+Agreed with the user: professional analysts compare the sources and choose one, rather than averaging them. Consensus is the default because it already reflects guidance and history.
+
+- **New provider** `lunoviq/providers/estimates.py` (role `estimates`): analyst consensus revenue for the next two fiscal years, with the number of analysts. Source is the stockanalysis.com forecast page; robots.txt allows it and it is cached for a day.
+  - Yahoo's estimates endpoint was tried first and rejected: it needs a session crumb and answered 429 or no crumb.
+  - Coverage checked on 14 companies, all found, including small caps (WDFC with 5 analysts, LWAY with 2).
+- **Growth path** (`drivers.growth_path`).
+  - Year 1 uses your guidance, else consensus, else history.
+  - Year 2 uses consensus.
+  - Years 3–5 fade linearly to terminal growth.
+  - With no consensus or guidance, the path is the same as before and marked "review".
+- **Checks.**
+  - Consensus is ignored unless its last actual revenue is within 2% of SEC's latest fiscal year, so a different year or revenue definition is caught.
+  - A year-1 figure more than 10 points from history is flagged. Example: KDP consensus is +58.5% because of an acquisition, against 7.0% history.
+  - Guidance more than 5 points from consensus is flagged, and consensus year 2 is then dropped.
+- **Traceability.** History, consensus year 1 and 2, and guidance are logged as `_growth_*` rows in 09_Sources and run.json. summary.json gets a `growth` block.
+- **Web.**
+  - New "Revenue growth" card with the sources side by side, the one used marked, the 5-year path and any flags.
+  - "Review before presenting" items.
+  - The form field is now "Year-1 growth (company guidance)", override `year1_growth` → `drv_Year1Growth`. The old flat `revenue_growth` override still works.
+- **Live results.**
+  - KO: consensus 3.7% then 0.25%. DCF $54.51 → $49.46.
+  - KDP: consensus DCF $79.69, flagged. With 5% guidance, DCF $41.52.
+  - Audit 190/190, checks OK.
+- **Tests:** parser, priority, misaligned consensus, flags, pipeline injection, web override.

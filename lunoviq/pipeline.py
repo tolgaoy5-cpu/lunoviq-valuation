@@ -52,9 +52,10 @@ STEPS = ["fundamentals", "market", "excel", "peers", "recalc", "audit"]
 
 
 def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=None, market=None,
-        with_peers=True, progress=None):
-    """Execute the pipeline. `market` lets tests inject market inputs; `progress(step)`
-    is called as each stage starts (used by the web UI)."""
+        with_peers=True, progress=None, estimates=None):
+    """Execute the pipeline. `market` / `estimates` let tests inject market inputs and analyst
+    consensus (estimates are fetched only for live market data; False skips them);
+    `progress(step)` is called as each stage starts (used by the web UI)."""
     step = progress or (lambda name: None)
     ticker = ticker.upper()
     years = config.get("pipeline.years", 3)
@@ -71,16 +72,27 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     st_long = fundamentals.financials(ticker, config.get("pipeline.history_years", 5), offline=offline)
     units.set_div(units.choose(st.latest("revenue")))
     try:
-        return _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, market, with_peers, step)
+        return _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, market, with_peers, step,
+                    estimates)
     finally:
         units.set_div(units.DEFAULT)
 
 
-def _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, market, with_peers, step):
+def _consensus(ticker, offline):
+    try:
+        return providers.get("estimates").revenue(ticker, offline=offline)
+    except Exception as e:                        # optional input: fall back to history
+        return {"error": "analyst estimates unavailable (%s)" % str(e)[:120]}
+
+
+def _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, market, with_peers, step,
+         estimates=None):
     step("market")
     if market is None:
         market = market_inputs.build(st, providers.get("prices"), providers.get("risk_free"),
                                      providers.get("equity_risk_premium"), offline=offline)
+        if estimates is None:
+            estimates = _consensus(ticker, offline)
 
     step("excel")
     # 3. historicals + history-based drivers (existing, tested writer) on a copy
@@ -99,7 +111,9 @@ def _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, m
     inputs.update(writer.template_defaults(wb, config.get("pipeline.review_inputs", [])))
     overrides = load_overrides(ticker, sets)
     terminal = (overrides.get("val_TerminalGrowth") or inputs["val_TerminalGrowth"]).value
-    inputs.update(drivers.build(st, terminal, st_long))
+    guidance = overrides.pop("drv_Year1Growth", None)
+    inputs.update(drivers.build(st, terminal, st_long, consensus=estimates or None,
+                                guidance=guidance.value if guidance else None))
     inputs.update(overrides)
     log += writer.apply_inputs(wb, inputs)
 

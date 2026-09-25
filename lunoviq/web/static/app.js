@@ -30,7 +30,7 @@ const INPUT_LABEL = {
   drv_DIO: "Inventory days", drv_DPO: "Payable days", drv_Payout: "Dividend payout", drv_LifeExisting: "Asset life",
   val_NonOpAssets: "Non-operating investments", val_MinorityInterest: "Minority interest", fin_DebtRate: "Rate on existing debt",
   fin_CashRate: "Interest rate on cash", drv_NonOpIncome: "Non-operating income (forecast)", scn_RevGrowthDelta: "Scenario range: growth",
-  scn_CogsMarginDelta: "Scenario range: cost margin",
+  scn_CogsMarginDelta: "Scenario range: cost margin", _growth_guidance: "Year-1 growth (company guidance)",
 };
 
 const ITEM_LABEL = { interest_expense: "interest expense", operating_income: "operating income", inventory: "inventory",
@@ -306,6 +306,34 @@ function bridge(d) {
   return s + `<p class="axis-note">${pct(tshare, 0)} of enterprise value comes from after 2030${tshare > 0.75 ? " — the value is highly sensitive to terminal growth and WACC." : "."}</p>`;
 }
 
+/* ---------------------------------------------------------------- growth sources */
+function growthCard(d) {
+  const g = d.growth || {};
+  const yrs = (d.years || []).slice(3);
+  const used = (k) => (g.used === k ? ' <span class="pill ok">used</span>' : "");
+  const na = (why) => `<span class="muted">${why}</span>`;
+  const why = (g.consensus_note || "").split(": not available - ")[1];
+  const rows = [
+    [`Analyst consensus${used("consensus")}<div class="src-method">${g.analysts ? `${g.analysts} analysts · ` : ""}${esc(g.consensus_source || "")}</div>`,
+      isNum(g.consensus_y1) ? pct(g.consensus_y1) : na("not found"), isNum(g.consensus_y2) ? pct(g.consensus_y2) : "—",
+      why ? esc(why) : "Average of the analysts who cover the company; already reflects guidance and history."],
+    [`Company guidance${used("guidance")}<div class="src-method">your input</div>`, isNum(g.guidance) ? pct(g.guidance) : na("not entered"), "—",
+      "Optional. Enter the company's own outlook below (midpoint of the range, reported revenue)."],
+    [`History${used("history")}<div class="src-method">SEC filings</div>`, isNum(g.history) ? pct(g.history) : "—", "—",
+      "Past average growth; the fallback when there is no estimate."],
+  ];
+  const path = Array.isArray(g.path) ? g.path : [];
+  return `
+    <p class="how">Where the growth assumption comes from. Priority for year 1: your guidance input, then analyst consensus, then history. Later years fade to terminal growth (${pct(d.wacc.terminal_growth)}).</p>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Source</th><th class="num">${esc(yrs[0] || "Year 1")}</th><th class="num">${esc(yrs[1] || "Year 2")}</th><th>Note</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td class="num">${r[2]}</td><td class="small">${r[3]}</td></tr>`).join("")}
+    </tbody></table></div>
+    ${path.length ? `<h3 style="margin:16px 0 8px">Revenue growth used in the model</h3>
+    <div class="table-wrap"><table class="tbl"><thead><tr>${yrs.map((y) => `<th class="num">${esc(y)}</th>`).join("")}</tr></thead><tbody>
+      <tr>${path.map((v) => `<td class="num">${pct(v)}</td>`).join("")}</tr></tbody></table></div>` : ""}
+    ${(g.flags || []).map((f) => `<p class="growth-flag"><span class="pill warn">Check</span> ${esc(f)}</p>`).join("")}`;
+}
+
 /* ---------------------------------------------------------------- result */
 function verdictText(d) {
   const vals = d.methods.filter((m) => m.key !== "precedents" && isNum(m.value)).map((m) => m.value);
@@ -321,9 +349,11 @@ function verdictText(d) {
 
 function reviewItems(d) {
   const out = [];
-  const g = d.inputs.gm_RevenueGrowth;
+  const g = d.inputs.gm_RevenueGrowth, gr = d.growth || {};
   if (g && g.status === "override") out.push(["info", `<b>Revenue growth is your input:</b> ${pct(Array.isArray(g.value) ? g.value[0] : g.value)} a year for 2026–30.`]);
-  else if (g && Array.isArray(g.value)) out.push(["", `<b>Revenue growth</b> is derived mechanically from history: it starts at ${pct(g.value[0])} and fades to ${pct(g.value[4])} by 2030. If you know the company (or its guidance), enter your own view below.`]);
+  else if (gr.used === "history") out.push(["", `<b>No analyst estimate was found</b>, so revenue growth is based on history only (starts at ${pct(gr.path && gr.path[0])}). If the company has published guidance, enter it below.`]);
+  else if (gr.used === "guidance") out.push(["info", `<b>Year-1 growth is your company-guidance input</b> (${pct(gr.guidance)}); analyst consensus is shown next to it for comparison.`]);
+  (gr.flags || []).forEach((f) => out.push(["", `<b>Check revenue growth:</b> ${esc(f)}.`]));
   const tg = d.inputs.val_TerminalGrowth;
   if (tg && tg.status === "template_default") out.push(["", `<b>Terminal growth</b> is the standard ${pct(tg.value)} (long-run inflation / GDP). Most of the value depends on it.`]);
   if ((d.peer_source || "").startsWith("automatic")) out.push(["", `<b>Peers were selected automatically</b> (same industry, closest revenue). If they do not fit, provide your own list in <code>peers/${esc(d.ticker)}.csv</code>.`]);
@@ -361,7 +391,8 @@ function renderResult(d, keepScroll = false) {
   const overrides = d.review.filter((r) => r.status === "override");
   const gIn = d.inputs.gm_RevenueGrowth || {};
   const growth0 = Array.isArray(gIn.value) ? gIn.value[0] : isNum(gIn.value) ? gIn.value : null;
-  const growthNote = gIn.status === "override" ? `Now: your input, ${pct(growth0)} every year` : `Automatic: starts at ${pct(growth0)}, fades to ${pct(d.wacc.terminal_growth)}`;
+  const gr = d.growth || {};
+  const growthNote = gr.used === "guidance" ? `Now: your guidance, ${pct(gr.guidance)}` : gr.used === "consensus" ? `Now: analyst consensus, ${pct(gr.consensus_y1)}` : gr.used === "override" ? `Now: your input, ${pct(growth0)} every year` : `Now: history, ${pct(growth0)}`;
   const methodCard = (k) => {
     const x = m[k];
     if (!x || !isNum(x.value)) return `<div class="m na"><div class="lbl">${METHOD_LABEL[k]}</div><div class="val">no data</div></div>`;
@@ -451,6 +482,11 @@ function renderResult(d, keepScroll = false) {
       </tbody></table></div>
     </section>
 
+    <section class="card" style="margin-top:18px" aria-labelledby="g-h">
+      <div class="card-head"><h2 id="g-h">Revenue growth</h2><span class="muted small">${gr.used === "consensus" ? "from analyst consensus" : gr.used === "guidance" ? "from your guidance input" : gr.used === "override" ? "your input" : "from history"}</span></div>
+      ${growthCard(d)}
+    </section>
+
     <div class="grid g-2">
       <section class="card" aria-labelledby="s-h">
         <div class="card-head"><h2 id="s-h">Sensitivity</h2></div>
@@ -469,7 +505,7 @@ function renderResult(d, keepScroll = false) {
       <div class="card-head"><h2 id="a-h">Change assumptions</h2></div>
       <p class="how">Empty fields keep their automatic value. The model is rebuilt from the same template and audited again; the current run is kept.</p>
       <form class="form" id="ovr" novalidate>
-        <div class="field"><label for="o-g">Revenue growth (every year)</label><div class="inp"><input id="o-g" inputmode="decimal" placeholder="${isNum(growth0) ? nf(1).format(growth0 * 100) : ""}"><span class="unit">%</span></div><div class="now">${growthNote}</div></div>
+        <div class="field"><label for="o-g">Year-1 growth (company guidance)</label><div class="inp"><input id="o-g" inputmode="decimal" placeholder="${isNum(growth0) ? nf(1).format(growth0 * 100) : ""}"><span class="unit">%</span></div><div class="now">${growthNote}</div></div>
         <div class="field"><label for="o-t">Terminal growth</label><div class="inp"><input id="o-t" inputmode="decimal" placeholder="${nf(1).format((d.wacc.terminal_growth || 0) * 100)}"><span class="unit">%</span></div><div class="now">Must be below WACC (${pct(d.wacc.wacc)})</div></div>
         <div class="field"><label for="o-x">Exit multiple (EV/EBITDA)</label><div class="inp"><input id="o-x" inputmode="decimal" placeholder="${nf(1).format(d.bridge.exit_multiple || 0)}"><span class="unit">x</span></div><div class="now">Automatic: industry average</div></div>
       </form>
@@ -512,7 +548,7 @@ function renderResult(d, keepScroll = false) {
     if (t !== null && t / 100 >= d.wacc.wacc) return (err.textContent = `Terminal growth must be below WACC (${pct(d.wacc.wacc)}).`);
     if (x !== null && (x < 1 || x > 80)) return (err.textContent = "Exit multiple must be between 1x and 80x.");
     const o = {};
-    if (g !== null) o.revenue_growth = g / 100;
+    if (g !== null) o.year1_growth = g / 100;
     if (t !== null) o.terminal_growth = t / 100;
     if (x !== null) o.exit_multiple = x;
     if (!Object.keys(o).length) return (err.textContent = "Fill in at least one field to change.");

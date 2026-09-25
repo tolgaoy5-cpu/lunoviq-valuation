@@ -4,7 +4,8 @@ template's demo-company values. Each driver is a DataPoint (value may be a
 5-year list) with the method recorded; policy bounds live in config [drivers].
 
 Standard mechanical defaults, not forecasts of the analyst's view:
-    revenue growth   5-yr revenue CAGR fading linearly to the terminal growth rate by year 5
+    revenue growth   year 1 (and 2): the user's company-guidance input, else analyst consensus,
+                     else the 5-yr revenue CAGR; then a linear fade to terminal growth by year 5
     capex            average capex / revenue over 5 years
     scenarios        bear/bull = -/+ one standard deviation of the company's own history
     working capital  DSO / DIO / DPO of the latest fiscal year, held flat
@@ -17,7 +18,7 @@ Standard mechanical defaults, not forecasts of the analyst's view:
     debt             held flat (no scheduled repayment or new borrowing)
 """
 from . import config, units
-from .schema import AUTO, DataPoint
+from .schema import AUTO, OVERRIDE, DataPoint
 
 SRC = "SEC EDGAR companyfacts"
 YEARS = 5
@@ -44,6 +45,76 @@ def revenue_growth(st, terminal):
     note = "%d-yr revenue CAGR %.1f%%%s, linear fade to terminal %.1f%% by year 5" % (
         n, g0 * 100, " (capped to %.0f%%)" % (g0c * 100) if g0c != g0 else "", terminal * 100)
     return _dp(path, "ratio", st, note)
+
+
+def _hist_cagr(st):
+    ys = [y for y in st.fiscal_years if st.value("revenue", y)]
+    if len(ys) < 2:
+        return None, 0
+    n = ys[-1] - ys[0]
+    return (st.value("revenue", ys[-1]) / st.value("revenue", ys[0])) ** (1 / n) - 1, n
+
+
+def consensus_check(st, consensus):
+    """Consensus is used only if its last reported year is our latest fiscal year: its
+    last actual revenue must match SEC revenue (same year, same revenue definition)."""
+    if not consensus or consensus.get("y1_growth") is None:
+        return (consensus or {}).get("error") or "no analyst estimate found"
+    sec, theirs = st.latest("revenue"), consensus.get("last_revenue")
+    if not sec or not theirs or abs(theirs / sec - 1) > config.get("drivers.consensus_match", 0.02):
+        return ("estimates are based on a different year or revenue definition (their last FY %s revenue "
+                "%s vs SEC FY%s %s)" % (consensus.get("last_fy_end"), "n/a" if not theirs else "%.0f" % theirs,
+                                        st.fiscal_years[-1], "n/a" if not sec else "%.0f" % sec))
+    return None
+
+
+def growth_path(st, terminal, consensus=None, guidance=None):
+    """Revenue growth for the 5 forecast years and the sources behind it.
+
+    Year 1: company guidance entered by the user > analyst consensus > history.
+    Year 2: analyst consensus if available. Later years fade linearly to terminal growth,
+    reached in year 5. Without guidance or consensus this is the history-only path."""
+    hist = revenue_growth(st, terminal)
+    g0, n = _hist_cagr(st)
+    problem = consensus_check(st, consensus)
+    c1 = None if problem else consensus["y1_growth"]
+    c2 = None if problem else consensus.get("y2_growth")
+    sources = {"history": g0, "history_years": n, "consensus_y1": c1, "consensus_y2": c2,
+               "analysts": None if problem else consensus.get("analysts"),
+               "consensus_source": None if problem else consensus.get("source"),
+               "consensus_note": problem, "guidance": guidance}
+    if guidance is None and c1 is None:
+        if hist is None:
+            return None, sources
+        sources["used"] = "history"
+        return _dp(hist.value, "ratio", st, hist.method + "; no analyst estimate (%s) - review" % problem), sources
+
+    y1, used = (guidance, "guidance") if guidance is not None else (c1, "consensus")
+    gap = config.get("drivers.growth_gap_review", 0.10)
+    if used == "guidance" and c1 is not None and abs(guidance - c1) > gap / 2:
+        c2 = None             # consensus year 2 builds on consensus year 1, which the user rejected
+    if c2 is not None:
+        path = [y1, c2] + [c2 + (terminal - c2) * t / 3 for t in (1, 2, 3)]
+        tail = "year 2 analyst consensus %.1f%%, then linear fade to terminal %.1f%% by year 5" % (c2 * 100, terminal * 100)
+    else:
+        path = [y1 + (terminal - y1) * t / 4 for t in range(5)]
+        tail = "linear fade to terminal %.1f%% by year 5" % (terminal * 100)
+    head = ("year 1 company guidance %.1f%% (user input)" % (y1 * 100) if used == "guidance" else
+            "year 1 analyst consensus %.1f%% (%s analysts, %s)" % (y1 * 100, sources["analysts"] or "n/a",
+                                                                   sources["consensus_source"]))
+    note = head + ", " + tail
+    flags = []
+    if g0 is not None and abs(y1 - g0) > gap:
+        flags.append("year 1 %.1f%% vs %d-yr history %.1f%%: large gap, check for acquisitions, "
+                     "divestitures or one-offs" % (y1 * 100, n, g0 * 100))
+    if used == "guidance" and c1 is not None and abs(guidance - c1) > gap / 2:
+        flags.append("your guidance %.1f%% vs analyst consensus %.1f%%" % (guidance * 100, c1 * 100))
+    if flags:
+        note += " - review: " + "; ".join(flags)
+    sources["used"], sources["flags"] = used, flags
+    dp = DataPoint([round(v, 4) for v in path], "ratio", sources["consensus_source"] if used == "consensus"
+                   else "user input (company guidance)", "FY%s" % st.fiscal_years[-1], note, AUTO)
+    return dp, sources
 
 
 def working_capital_days(st):
@@ -186,14 +257,33 @@ def current_items(st):
     return out
 
 
-def build(st, terminal_growth, st_long=None):
+def build(st, terminal_growth, st_long=None, consensus=None, guidance=None):
     """{named_range: DataPoint}; list values fill multi-year ranges in order.
-    st_long: longer history (5 fiscal years) for averages and volatility."""
+    st_long: longer history (5 fiscal years) for averages and volatility.
+    consensus: EstimatesProvider.revenue() result; guidance: user's year-1 growth.
+    Entries starting with "_" are logged (09_Sources, run.json) but not written."""
     lng = st_long or st
     out = {}
-    g = revenue_growth(lng, terminal_growth)
+    g, src = growth_path(lng, terminal_growth, consensus, guidance)
     if g:
         out["gm_RevenueGrowth"] = g
+    fy = "FY%s" % st.fiscal_years[-1]
+    for key, label in (("history", "%d-yr revenue CAGR (history)" % src["history_years"]),
+                       ("consensus_y1", "analyst consensus, year 1"), ("consensus_y2", "analyst consensus, year 2"),
+                       ("guidance", "company guidance, year 1 (user input)")):
+        note = label + ("; used" if src.get("used") == key.split("_")[0] and key != "consensus_y2" else "")
+        if key.startswith("consensus") and src["consensus_note"]:
+            note = label + ": not available - " + src["consensus_note"]
+        elif key.startswith("consensus") and src["analysts"]:
+            note += "; %d analysts" % src["analysts"]
+        if key == "guidance" and src[key] is None:
+            continue
+        if key.startswith("consensus"):
+            source = src["consensus_source"] or "analyst consensus"
+        else:
+            source = "user input" if key == "guidance" else SRC
+        out["_growth_" + key] = DataPoint(src[key], "ratio", source, fy, note,
+                                          OVERRIDE if key == "guidance" else AUTO)
     out.update(working_capital_days(st))
     for name, fn in (("drv_CapexPct", capex_pct), ("drv_Payout", payout)):
         dp = fn(lng)

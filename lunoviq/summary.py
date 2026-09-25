@@ -4,6 +4,7 @@ Everything the web UI shows for one run, read from the recalculated workbook
 Written next to the model as summary.json.
 """
 import json
+import re
 from pathlib import Path
 
 import openpyxl
@@ -58,8 +59,21 @@ def build(model_path, run_json=None):
     review = [{"name": k, "value": v.get("value"), "method": v.get("method"), "status": v.get("status")}
               for k, v in inputs.items() if v.get("status") in ("template_default", "override")
               or "review" in (v.get("method") or "")]
+    g = lambda k: (inputs.get("_growth_" + k) or {}).get("value")
+    gpath = inputs.get("gm_RevenueGrowth") or {}
+    note = gpath.get("method") or ""
+    growth = {"path": gpath.get("value"), "method": note, "status": gpath.get("status"),
+              "history": g("history"), "consensus_y1": g("consensus_y1"), "consensus_y2": g("consensus_y2"),
+              "guidance": g("guidance"),
+              "analysts": int(m.group(1)) if (m := re.search(r"(\d+) analysts",
+                                                            (inputs.get("_growth_consensus_y1") or {}).get("method") or "")) else None,
+              "consensus_note": (inputs.get("_growth_consensus_y1") or {}).get("method"),
+              "consensus_source": (inputs.get("_growth_consensus_y1") or {}).get("source"),
+              "used": ("override" if gpath.get("status") == "override" else "guidance" if note.startswith("year 1 company")
+                       else "consensus" if note.startswith("year 1 analyst") else "history"),
+              "flags": note.split(" - review: ", 1)[1].split("; ") if " - review: " in note else []}
     return {
-        "ticker": rec.get("ticker"), "company": rec.get("company"), "generated": rec.get("generated"),
+        "ticker": rec.get("ticker"), "growth": growth, "company": rec.get("company"), "generated": rec.get("generated"),
         "model": str(model_path), "units": rec.get("units", "USD thousands"),
         "unit_div": rec.get("unit_div", 1e3),
         "price": _num(dash["B41"].value), "shares": _num(dcf["H29"].value),

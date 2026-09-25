@@ -240,3 +240,6 @@ details.sources[open] summary { margin-bottom: 12px; }
   .tbl .src-method { display: none; }
   .heat td { padding: 7px 2px; font-size: 12px; }
 }
+
+.growth-flag { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
+.growth-flag .pill { margin-right: 6px; }

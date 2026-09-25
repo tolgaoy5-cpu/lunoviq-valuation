@@ -10,6 +10,8 @@ import pytest
 from lunoviq.web import server
 
 
+lunoviq_sets = []
+
 @pytest.fixture(scope="module")
 def base(tmp_path_factory):
     out = tmp_path_factory.mktemp("output")
@@ -25,6 +27,7 @@ def base(tmp_path_factory):
                        ("MNST", "Monster Beverage Corp")]
 
     def fake_run(ticker, sets=(), progress=None, **kw):
+        lunoviq_sets.append(list(sets))
         for s in ("fundamentals", "market", "excel", "peers", "recalc", "audit"):
             progress(s)
         if ticker == "XOM":
@@ -94,6 +97,14 @@ def test_run_with_override_reports_steps_and_passes_named_range(base):
     j = wait_job(base, res["job"])
     assert j["status"] == "done" and j["step"] == "audit" and j["run"] == "KO_20260925-0938"
     assert j["summary"]["ticker"] == "KO"
+
+
+def test_year1_growth_override_becomes_guidance_input(base):
+    code, res = call(base, "/api/runs", {"ticker": "ko", "overrides": {"year1_growth": 0.055}})
+    assert code == 202
+    j = wait_job(base, res["job"])
+    assert j["status"] == "done"
+    assert lunoviq_sets[-1] == ["drv_Year1Growth=0.055"]
 
 
 def test_data_error_is_friendly_and_not_retryable(base):

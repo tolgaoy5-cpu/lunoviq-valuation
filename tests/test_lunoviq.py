@@ -212,3 +212,22 @@ def test_millions_and_thousands_give_identical_valuation(tmp_path, monkeypatch):
     wb = openpyxl.load_workbook(runs[1e6]["model"])
     assert wb["03_3_Statement_Model"]["A4"].value == "All figures in USD millions unless stated"
     assert wb["01_Inputs_Historicals"]["B67"].value == "m"
+
+
+def test_pipeline_uses_injected_consensus_and_guidance(tmp_path):
+    from lunoviq.providers import sec_edgar
+    st = sec_edgar.SecEdgarProvider(facts_path=KO).financials("KO", 3)
+    cons = {"last_fy_end": "x", "last_revenue": st.latest("revenue"), "y1_growth": 0.037, "y2_growth": 0.01,
+            "analysts": 18, "source": "test consensus"}
+    res = pipeline.run("KO", facts_path=KO, recalc=False, out_root=tmp_path, market=_market(),
+                       with_peers=False, estimates=cons)
+    wb = openpyxl.load_workbook(res["model"])
+    g = writer.read_named(wb, "gm_RevenueGrowth")
+    assert g[0] == 0.037 and g[1] == 0.01 and g[-1] == pytest.approx(0.025)
+    log = {r[0].value: r for r in wb["09_Sources"].iter_rows(min_row=5)}
+    assert "_growth_consensus_y1" in log and "_growth_history" in log
+    res = pipeline.run("KO", facts_path=KO, recalc=False, out_root=tmp_path / "g", market=_market(),
+                       with_peers=False, estimates=cons, sets=["drv_Year1Growth=0.055"])
+    wb = openpyxl.load_workbook(res["model"])
+    assert writer.read_named(wb, "gm_RevenueGrowth")[0] == 0.055
+    assert "drv_Year1Growth" not in wb.defined_names

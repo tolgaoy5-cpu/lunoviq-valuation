@@ -164,3 +164,57 @@ def test_unreported_interest_means_no_extra_forecast_interest():
     fin = market_inputs.financing(st, kd, offline=True)
     assert fin["fin_DebtRate"].value == 0.0 and fin["fin_CashRate"].value == 0.0
     assert fin["fin_RevolverRate"].value == 0.055
+
+
+# ---------------------------------------------------------------- analyst consensus / guidance
+from lunoviq.providers import estimates
+
+
+def _cons(last=144, y1=0.05, y2=0.04, analysts=12):
+    return {"last_fy_end": "2025-12-31", "last_revenue": last, "y1_growth": y1, "y2_growth": y2,
+            "analysts": analysts, "source": "test consensus"}
+
+
+def test_parse_stockanalysis_page():
+    html = ('stats:{annual:{revenueNext:{last:49718816390,this:49842629720,growth:.2490271068176569},'
+            'revenueThis:{last:47941000000,this:49718816390,growth:3.708342316597484}},quarterly:{}},'
+            'table:{annual:{dates:["2024-12-31","2025-12-31","2026-12-31","2027-12-31"],'
+            'revenue:[47061000000,47941000000,49718816390,"[PRO]"],analysts:[null,null,18,"[PRO]"],lastDate:1,')
+    d = estimates.parse(html)
+    assert d["last_fy_end"] == "2025-12-31" and d["last_revenue"] == 47941000000
+    assert d["y1_growth"] == pytest.approx(0.0370834, abs=1e-6) and d["y2_growth"] == pytest.approx(0.0024903, abs=1e-6)
+    assert d["analysts"] == 18
+    with pytest.raises(estimates.EstimatesError):
+        estimates.parse("<html>no data</html>")
+
+
+def test_growth_uses_consensus_then_fades():
+    st = _st(revenue=[100, 121, 144])                          # 20% history
+    dp, src = drivers.growth_path(st, 0.025, _cons())
+    assert src["used"] == "consensus"
+    assert dp.value == pytest.approx([0.05, 0.04, 0.04 - 0.015 / 3, 0.04 - 0.03 / 3, 0.025], abs=1e-4)
+    assert "analyst consensus" in dp.method and "review" in dp.method        # 5% vs 20% history
+
+
+def test_growth_guidance_beats_consensus_and_is_flagged():
+    st = _st(revenue=[100, 105, 110.25])                       # 5% history
+    dp, src = drivers.growth_path(st, 0.025, _cons(last=110.25, y2=None), guidance=0.20)
+    assert src["used"] == "guidance" and dp.value[0] == 0.20 and dp.value[-1] == pytest.approx(0.025)
+    assert dp.value[1] == pytest.approx(0.20 + (0.025 - 0.20) / 4, abs=1e-4)
+    assert any("consensus" in f for f in src["flags"]) and any("history" in f for f in src["flags"])
+    dp, _ = drivers.growth_path(st, 0.025, _cons(last=110.25, y1=0.19, y2=0.08), guidance=0.20)
+    assert dp.value[1] == 0.08                                # close to consensus: keep its year 2
+    dp, _ = drivers.growth_path(st, 0.025, _cons(last=110.25, y1=0.50, y2=0.15), guidance=0.20)
+    assert dp.value[1] == pytest.approx(0.20 + (0.025 - 0.20) / 4, abs=1e-4)   # rejected: no year 2
+
+
+def test_growth_rejects_misaligned_consensus_and_falls_back_to_history():
+    st = _st(revenue=[100, 121, 144])
+    dp, src = drivers.growth_path(st, 0.025, _cons(last=130))   # other year / definition
+    assert src["used"] == "history" and src["consensus_y1"] is None
+    assert dp.value == drivers.revenue_growth(st, 0.025).value and "no analyst estimate" in dp.method
+    dp, src = drivers.growth_path(st, 0.025, {"error": "analyst estimates unavailable (timeout)"})
+    assert src["used"] == "history" and "timeout" in src["consensus_note"]
+    d = drivers.build(st, 0.025, consensus=_cons(last=130))
+    assert d["_growth_consensus_y1"].value is None and "not available" in d["_growth_consensus_y1"].method
+    assert "_growth_guidance" not in d

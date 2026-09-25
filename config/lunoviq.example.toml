@@ -51,4 +51,6 @@ review_inputs = ["val_TerminalGrowth"]
 [drivers]
 # Mechanical defaults derived from each company's history (see lunoviq/drivers.py).
 growth_bounds = [-0.20, 0.40]         # recent CAGR is capped before fading to terminal growth
+consensus_match = 0.02                # consensus used only if its last actual revenue is within 2% of SEC
+growth_gap_review = 0.10              # flag year-1 growth this far from history (half of it vs consensus)
 asset_life_bounds = [5, 40]           # years; net PP&E / D&A
