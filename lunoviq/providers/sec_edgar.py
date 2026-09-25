@@ -80,7 +80,7 @@ class SecEdgarProvider(FundamentalsProvider):
         for key, tags in EXTRA_TAGS.items():
             s, tag = sec_xbrl.pick(facts, tags, fye)
             items[key] = {y: DataPoint(s[y][0] if y in s else None, "USD", SOURCE,
-                                       fye.get(y, str(y)), tag or "BULUNAMADI",
+                                       fye.get(y, str(y)), tag or sec_xbrl.NOT_FOUND,
                                        AUTO if y in s else MISSING)
                           for y in fy_list}
 

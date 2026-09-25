@@ -19,7 +19,7 @@ def test_ko_years_and_core_values(ko):
     assert years == [2023, 2024, 2025]
     assert series["Revenue"][2025] == 47_941_000_000
     assert series["Total Assets (reported)"][2025] == 104_816_000_000
-    assert used["Revenue"] != "BULUNAMADI"
+    assert used["Revenue"] != EF.NOT_FOUND
 
 
 def test_ko_balance_sheet_plugs_close(ko):

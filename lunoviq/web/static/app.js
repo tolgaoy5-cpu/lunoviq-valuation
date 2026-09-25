@@ -3,53 +3,53 @@
 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const nf = (d) => new Intl.NumberFormat("tr-TR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const nf = (d) => new Intl.NumberFormat("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const isNum = (v) => typeof v === "number" && isFinite(v);
-const money = (v) => (isNum(v) ? nf(2).format(v) + " $" : "—");
-const bn = (v) => (isNum(v) ? nf(1).format(v / 1e6) + " mlr $" : "—");          // model units: USD thousands
-const pct = (v, d = 1) => (isNum(v) ? "%" + nf(d).format(v * 100) : "—");
+const money = (v) => (isNum(v) ? (v < 0 ? "−$" : "$") + nf(2).format(Math.abs(v)) : "—");
+const bn = (v) => (isNum(v) ? (v < 0 ? "−$" : "$") + nf(1).format(Math.abs(v) / 1e6) + "B" : "—");          // model units: USD thousands
+const pct = (v, d = 1) => (isNum(v) ? nf(d).format(v * 100) + "%" : "—");
 const mult = (v) => (isNum(v) ? nf(1).format(v) + "x" : "—");
-const signed = (v) => (isNum(v) ? (v >= 0 ? "+" : "−") + "%" + nf(1).format(Math.abs(v * 100)) : "—");
-const date = (s) => (s ? new Date(s).toLocaleString("tr-TR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+const signed = (v) => (isNum(v) ? (v >= 0 ? "+" : "−") + nf(1).format(Math.abs(v * 100)) + "%" : "—");
+const date = (s) => (s ? new Date(s).toLocaleString("en-US", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 
 const STEPS = [
-  ["fundamentals", "SEC finansalları çekiliyor"],
-  ["market", "Piyasa verileri ve sermaye maliyeti"],
-  ["excel", "Excel modeli dolduruluyor"],
-  ["peers", "Emsal şirketler seçiliyor"],
-  ["recalc", "Excel'de hesaplanıyor"],
-  ["audit", "Bağımsız denetim"],
+  ["fundamentals", "Fetching SEC financials"],
+  ["market", "Market data and cost of capital"],
+  ["excel", "Populating the Excel model"],
+  ["peers", "Selecting peer companies"],
+  ["recalc", "Recalculating in Excel"],
+  ["audit", "Independent audit"],
 ];
-const METHOD_LABEL = { dcf_perpetuity: "DCF · büyüme", dcf_exit: "DCF · sektör çarpanı", trading_comps: "Emsal şirketler", precedents: "Emsal işlemler" };
+const METHOD_LABEL = { dcf_perpetuity: "DCF · perpetuity growth", dcf_exit: "DCF · exit multiple", trading_comps: "Trading comparables", precedents: "Precedent transactions" };
 const INPUT_LABEL = {
-  ctl_SharePrice: "Hisse fiyatı", val_RiskFree: "Risksiz faiz", val_ERP: "Hisse risk primi", val_Beta: "Beta",
-  val_CostOfDebt: "Borç maliyeti (vergi öncesi)", drv_TaxRate: "Vergi oranı", val_DebtWeight: "Borç ağırlığı",
-  val_EquityWeight: "Özsermaye ağırlığı", val_ExitMultiple: "Çıkış çarpanı (FAVÖK)", val_TerminalGrowth: "Uzun vadeli büyüme",
-  gm_RevenueGrowth: "Gelir büyümesi (2026–30)", drv_CapexPct: "Yatırım harcaması / gelir", drv_DSO: "Alacak günleri",
-  drv_DIO: "Stok günleri", drv_DPO: "Borç günleri", drv_Payout: "Temettü dağıtım oranı", drv_LifeExisting: "Varlık ömrü",
-  val_NonOpAssets: "Faaliyet dışı yatırımlar", val_MinorityInterest: "Azınlık payları", fin_DebtRate: "Mevcut borç faizi",
-  fin_CashRate: "Nakit faizi", drv_NonOpIncome: "Faaliyet dışı gelir (tahmin)", scn_RevGrowthDelta: "Senaryo aralığı: büyüme",
-  scn_CogsMarginDelta: "Senaryo aralığı: maliyet marjı",
+  ctl_SharePrice: "Share price", val_RiskFree: "Risk-free rate", val_ERP: "Equity risk premium", val_Beta: "Beta",
+  val_CostOfDebt: "Cost of debt (pre-tax)", drv_TaxRate: "Tax rate", val_DebtWeight: "Debt weight",
+  val_EquityWeight: "Equity weight", val_ExitMultiple: "Exit multiple (EV/EBITDA)", val_TerminalGrowth: "Terminal growth",
+  gm_RevenueGrowth: "Revenue growth (2026–30)", drv_CapexPct: "Capex / revenue", drv_DSO: "Receivable days",
+  drv_DIO: "Inventory days", drv_DPO: "Payable days", drv_Payout: "Dividend payout", drv_LifeExisting: "Asset life",
+  val_NonOpAssets: "Non-operating investments", val_MinorityInterest: "Minority interest", fin_DebtRate: "Rate on existing debt",
+  fin_CashRate: "Interest rate on cash", drv_NonOpIncome: "Non-operating income (forecast)", scn_RevGrowthDelta: "Scenario range: growth",
+  scn_CogsMarginDelta: "Scenario range: cost margin",
 };
 
-const ITEM_LABEL = { interest_expense: "faiz gideri", operating_income: "faaliyet kârı", inventory: "stok",
-  deferred_tax_liability: "ertelenmiş vergi yükümlülüğü", receivables: "ticari alacaklar", payables: "ticari borçlar",
-  total_debt: "toplam borç", cogs: "satış maliyeti", sga: "genel yönetim giderleri", d_and_a: "amortisman",
-  current_assets: "dönen varlıklar", current_liabilities: "kısa vadeli yükümlülükler", pretax_income: "vergi öncesi kâr" };
+const ITEM_LABEL = { interest_expense: "interest expense", operating_income: "operating income", inventory: "inventory",
+  deferred_tax_liability: "deferred tax liability", receivables: "receivables", payables: "payables",
+  total_debt: "total debt", cogs: "cost of goods sold", sga: "SG&A", d_and_a: "D&A",
+  current_assets: "current assets", current_liabilities: "current liabilities", pretax_income: "pre-tax income" };
 const IGNORE_MISSING = ["tax_loss_carryforward", "total_liabilities", "dividends", "interest_income", "minority_interest",
   "nonop_investments", "other_opex", "other_assets", "other_liabilities", "other_equity", "capex"];
 
 function rationaleText(r) {
   const m = /^Same Damodaran industry \((.*)\); revenue ([\d.]+)bn vs target ([\d.]+)bn$/.exec(r || "");
   if (!m) return r || "";
-  return `Aynı Damodaran sektörü (${m[1]}); gelir ${nf(1).format(+m[2])} mlr $, hedef şirket ${nf(1).format(+m[3])} mlr $`;
+  return `Same Damodaran industry (${m[1]}); revenue $${m[2]}B vs target $${m[3]}B`;
 }
 
 /* ---------------------------------------------------------------- api */
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(data.error || "İstek başarısız."), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(data.error || "Request failed."), { status: r.status });
   return data;
 }
 
@@ -64,7 +64,7 @@ function toast(msg) {
 /* ---------------------------------------------------------------- router */
 function show(id) {
   document.querySelectorAll(".view").forEach((v) => (v.hidden = v.id !== id));
-  $("#search-top").hidden = id === "view-home";
+  $("#search-top").hidden = id === "view-home" || id === "view-stopped";
 }
 
 let pollTimer = null;
@@ -77,7 +77,7 @@ async function route() {
       const d = await api("/api/summary?run=" + encodeURIComponent(arg));
       renderResult(d);
     } catch (e) {
-      renderError("Çalışma bulunamadı", e.message, "", null);
+      renderError("Run not found", e.message, "", null);
     }
     return;
   }
@@ -124,7 +124,7 @@ function bindSearch(form) {
     e.preventDefault();
     const pick = !list.hidden && items[sel] ? items[sel].ticker : input.value.trim().toUpperCase();
     close();
-    if (!pick) { input.focus(); return toast("Bir hisse kodu yazın."); }
+    if (!pick) { input.focus(); return toast("Type a ticker or company name."); }
     startRun(pick);
   });
 }
@@ -144,7 +144,7 @@ async function startRun(ticker, overrides = {}) {
 async function pollJob(id) {
   let job;
   try { job = await api("/api/runs/" + id); }
-  catch { return renderError("İş bulunamadı", "Uygulama yeniden başlatıldıysa işi tekrar başlatın.", "", null); }
+  catch { return renderError("Job not found", "If the app was restarted, start the run again.", "", null); }
   if (job.status === "done") { history.replaceState(null, "", "#/run/" + job.run); return renderResult({ ...job.summary, run: job.run }); }
   if (job.status === "error") return renderError(job.ticker, job.error, job.detail, job.retryable ? job.ticker : null);
   renderRunning(job);
@@ -154,22 +154,22 @@ async function pollJob(id) {
 const stepStart = {};
 function renderRunning(job) {
   show("view-run");
-  document.title = `${job.ticker} hazırlanıyor · Lunoviq`;
+  document.title = `Building ${job.ticker} · Lunoviq`;
   $("#run-title").textContent = job.ticker;
-  $("#run-eyebrow").textContent = job.status === "queued" ? `Sırada bekliyor${job.queue_position ? " (" + job.queue_position + ". sıra)" : ""}` : "Model hazırlanıyor";
+  $("#run-eyebrow").textContent = job.status === "queued" ? `Queued${job.queue_position ? " (position " + job.queue_position + ")" : ""}` : "Building the model";
   const idx = STEPS.findIndex(([k]) => k === job.step);
   if (job.step && !stepStart[job.id + job.step]) stepStart[job.id + job.step] = Date.now();
   $("#run-steps").innerHTML = STEPS.map(([k, label], i) => {
     const cls = i < idx ? "done" : i === idx ? "active" : "";
-    const secs = i === idx && stepStart[job.id + k] ? Math.round((Date.now() - stepStart[job.id + k]) / 1000) + " sn" : "";
+    const secs = i === idx && stepStart[job.id + k] ? Math.round((Date.now() - stepStart[job.id + k]) / 1000) + " s" : "";
     return `<li class="${cls}"><span class="ic" aria-hidden="true"></span><span>${label}</span><span class="t">${secs}</span></li>`;
   }).join("");
 }
 
 function renderError(title, msg, detail, ticker) {
   show("view-error");
-  document.title = "Hata · Lunoviq";
-  $("#err-title").textContent = title || "Hata";
+  document.title = "Error · Lunoviq";
+  $("#err-title").textContent = title || "Error";
   $("#err-msg").textContent = msg || "";
   $("#err-detail").textContent = detail || "—";
   $("#err-detail").closest("details").hidden = !detail;
@@ -187,7 +187,7 @@ async function renderHome() {
   try { rows = await api("/api/history"); } catch { /* shown as empty */ }
   $("#recent-empty").hidden = rows.length > 0;
   $("#recent-table").hidden = rows.length === 0;
-  $("#recent-count").textContent = rows.length ? rows.length + " çalışma" : "";
+  $("#recent-count").textContent = rows.length ? rows.length + (rows.length === 1 ? " run" : " runs") : "";
   $("#recent-table tbody").innerHTML = rows.map((r) => `
     <tr class="link" tabindex="0" data-run="${esc(r.run)}">
       <td><div class="co"><b>${esc(r.ticker)}</b><span>${esc(title(r.company))}</span></div></td>
@@ -196,7 +196,7 @@ async function renderHome() {
       <td class="num">${money(r.methods.dcf_exit)}</td>
       <td class="num">${money(r.methods.trading_comps)}</td>
       <td class="muted small">${date(r.generated)}</td>
-      <td>${r.healthy ? '<span class="pill ok">Kontroller OK</span>' : '<span class="pill warn">Kontrol et</span>'}</td>
+      <td>${r.healthy ? '<span class="pill ok">Checks OK</span>' : '<span class="pill warn">Review</span>'}</td>
     </tr>`).join("");
   document.querySelectorAll("#recent-table tr.link").forEach((tr) => {
     const go = () => (location.hash = "#/run/" + tr.dataset.run);
@@ -207,7 +207,7 @@ async function renderHome() {
 
 function title(s) {
   if (!s) return "";
-  return s.toLowerCase().replace(/(^|[\s(&-])([a-zçğıöşü])/g, (m, a, b) => a + b.toUpperCase()).replace(/\b(Inc|Co|Corp|Plc|Llc)\b/g, (m) => m);
+  return s.toLowerCase().replace(/(^|[\s(&-])([a-z])/g, (m, a, b) => a + b.toUpperCase()).replace(/\b(Inc|Co|Corp|Plc|Llc)\b/g, (m) => m);
 }
 
 /* ---------------------------------------------------------------- charts */
@@ -231,7 +231,7 @@ function footballField(d) {
   const W = chartWidth(640), L = W < 480 ? 104 : 150, R = 18, rowH = 40, top = 16, H = top + rows.length * rowH + 30;
   const x = (v) => L + ((v - lo) / (hi - lo)) * (W - L - R);
   const ticks = niceTicks(lo, hi, 5);
-  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Yöntemlerin değer aralığı ve piyasa fiyatı">`;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Value range by method and market price">`;
   ticks.forEach((t) => { s += `<line class="gridl" x1="${x(t)}" x2="${x(t)}" y1="${top - 4}" y2="${H - 26}"/><text x="${x(t)}" y="${H - 10}" text-anchor="middle">${nf(0).format(t)}</text>`; });
   rows.forEach((m, i) => {
     const y = top + i * rowH + rowH / 2;
@@ -242,7 +242,7 @@ function footballField(d) {
     if (isNum(m.value)) s += `<circle class="dot" cx="${x(m.value)}" cy="${y}" r="5"><title>${money(m.value)}</title></circle>`;
   });
   const px = x(d.price);
-  s += `<line class="price" x1="${px}" x2="${px}" y1="${top - 8}" y2="${H - 26}"/><text class="price-lab" x="${px}" y="${top - 10 < 8 ? 8 : top - 10}" text-anchor="${px > W - 80 ? "end" : "middle"}">Fiyat ${money(d.price)}</text>`;
+  s += `<line class="price" x1="${px}" x2="${px}" y1="${top - 8}" y2="${H - 26}"/><text class="price-lab" x="${px}" y="${top - 10 < 8 ? 8 : top - 10}" text-anchor="${px > W - 80 ? "end" : "middle"}">Price ${money(d.price)}</text>`;
   return s + "</svg>";
 }
 
@@ -252,31 +252,31 @@ function finChart(d) {
   const hi = Math.max(...vals) * 1.08, ticks = niceTicks(0, hi / 1e6, 4);
   const y = (v) => T + (1 - v / (ticks[ticks.length - 1] * 1e6)) * (H - T - B);
   const slot = (W - L) / n, bw = Math.min(26, slot * 0.32);
-  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gelir ve FAVÖK, geçmiş ve tahmin">`;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Revenue and EBITDA, actual and forecast">`;
   ticks.forEach((t) => { s += `<line class="gridl" x1="${L}" x2="${W}" y1="${y(t * 1e6)}" y2="${y(t * 1e6)}"/><text x="${L - 8}" y="${y(t * 1e6) + 4}" text-anchor="end">${nf(0).format(t)}</text>`; });
   d.years.forEach((yr, i) => {
     const cx = L + slot * i + slot / 2, fc = i >= 3;
-    if (isNum(f.revenue[i])) s += `<rect class="${fc ? "bar-f" : "bar-h"}" x="${cx - bw - 1}" y="${y(f.revenue[i])}" width="${bw}" height="${H - B - y(f.revenue[i])}" rx="2"><title>${yr} gelir ${bn(f.revenue[i])}</title></rect>`;
-    if (isNum(f.ebitda[i]) && f.ebitda[i] > 0) s += `<rect class="${fc ? "bar-ef" : "bar-e"}" x="${cx + 1}" y="${y(f.ebitda[i])}" width="${bw}" height="${H - B - y(f.ebitda[i])}" rx="2"><title>${yr} FAVÖK ${bn(f.ebitda[i])}</title></rect>`;
+    if (isNum(f.revenue[i])) s += `<rect class="${fc ? "bar-f" : "bar-h"}" x="${cx - bw - 1}" y="${y(f.revenue[i])}" width="${bw}" height="${H - B - y(f.revenue[i])}" rx="2"><title>${yr} revenue ${bn(f.revenue[i])}</title></rect>`;
+    if (isNum(f.ebitda[i]) && f.ebitda[i] > 0) s += `<rect class="${fc ? "bar-ef" : "bar-e"}" x="${cx + 1}" y="${y(f.ebitda[i])}" width="${bw}" height="${H - B - y(f.ebitda[i])}" rx="2"><title>${yr} EBITDA ${bn(f.ebitda[i])}</title></rect>`;
     s += `<text x="${cx}" y="${H - 8}" text-anchor="middle">${esc(W < 600 ? yr.slice(2) : yr)}</text>`;
   });
   const dx = L + slot * 3;
-  s += `<line class="div" x1="${dx}" x2="${dx}" y1="${T}" y2="${H - B}"/><text x="${dx + 6}" y="${T + 10}">tahmin →</text>`;
+  s += `<line class="div" x1="${dx}" x2="${dx}" y1="${T}" y2="${H - B}"/><text x="${dx + 6}" y="${T + 10}">forecast →</text>`;
   return s + "</svg>";
 }
 
 function heatmap(d) {
   const g = d.grid, cw = d.wacc.wacc, tg = d.wacc.terminal_growth;
-  if (!g.wacc.every(isNum)) return '<p class="muted">Duyarlılık tablosu yok.</p>';
+  if (!g.wacc.every(isNum)) return '<p class="muted">No sensitivity table.</p>';
   const ci = g.wacc.reduce((b, v, i) => (Math.abs(v - cw) < Math.abs(g.wacc[b] - cw) ? i : b), 0);
   const cj = g.growth.reduce((b, v, j) => (Math.abs(v - tg) < Math.abs(g.growth[b] - tg) ? j : b), 0);
-  let s = `<div class="table-wrap" style="border:0"><table class="heat"><thead><tr><th>WACC ↓ / büyüme →</th>${g.growth.map((v) => `<th>${pct(v)}</th>`).join("")}</tr></thead><tbody>`;
+  let s = `<div class="table-wrap" style="border:0"><table class="heat"><thead><tr><th>WACC ↓ / growth →</th>${g.growth.map((v) => `<th>${pct(v)}</th>`).join("")}</tr></thead><tbody>`;
   g.price.forEach((row, i) => {
     s += `<tr><th>${pct(g.wacc[i])}</th>`;
     row.forEach((p, j) => {
       const prem = isNum(p) ? p / d.price - 1 : 0, a = Math.min(0.55, Math.abs(prem) * 0.9 + 0.06);
       const col = prem >= 0 ? `rgba(var(--heat-pos),${a})` : `rgba(var(--heat-neg),${a})`;
-      s += `<td class="${i === ci && j === cj ? "cur" : ""}" style="background:${col}" title="WACC ${pct(g.wacc[i])}, büyüme ${pct(g.growth[j])}: ${money(p)} (${signed(prem)})">${isNum(p) ? nf(0).format(p) : "—"}</td>`;
+      s += `<td class="${i === ci && j === cj ? "cur" : ""}" style="background:${col}" title="WACC ${pct(g.wacc[i])}, growth ${pct(g.growth[j])}: ${money(p)} (${signed(prem)})">${isNum(p) ? nf(0).format(p) : "—"}</td>`;
     });
     s += "</tr>";
   });
@@ -286,13 +286,13 @@ function heatmap(d) {
 function bridge(d) {
   const b = d.bridge;
   const items = [
-    ["2026–30 nakit akışlarının bugünkü değeri", b.pv_discrete, "p"],
-    ["2030 sonrası (terminal) değer", b.pv_terminal, "p"],
-    ["Firma değeri", b.ev, "t"],
-    ["− Net borç (borç − nakit)", -(b.net_debt_adj + (b.nonop || 0) - (b.minority || 0)), "n"],
-    ["+ Faaliyet dışı yatırımlar", b.nonop, "p"],
-    ["− Azınlık payları", -(b.minority || 0), "n"],
-    ["Özsermaye değeri", b.equity, "t"],
+    ["PV of 2026–30 cash flows", b.pv_discrete, "p"],
+    ["PV of terminal value (after 2030)", b.pv_terminal, "p"],
+    ["Enterprise value", b.ev, "t"],
+    ["− Net debt (debt − cash)", -(b.net_debt_adj + (b.nonop || 0) - (b.minority || 0)), "n"],
+    ["+ Non-operating investments", b.nonop, "p"],
+    ["− Minority interest", -(b.minority || 0), "n"],
+    ["Equity value", b.equity, "t"],
   ].filter(([, v]) => isNum(v) && Math.abs(v) > 0);
   const max = Math.max(...items.map(([, v]) => Math.abs(v)));
   let s = '<div class="bridge">';
@@ -300,9 +300,9 @@ function bridge(d) {
     const w = (Math.abs(v) / max) * 100;
     s += `<div class="br"><span>${lab}</span><span class="track"><span class="seg ${k === "t" ? "tot" : v < 0 ? "neg" : ""}" style="left:0;width:${w}%"></span></span><span class="v">${bn(v)}</span></div>`;
   });
-  s += `<div class="br"><span><b>Bölü ${nf(0).format(d.shares / 1000)} milyon hisse</b></span><span></span><span class="v"><b>${money(d.methods[0].value)}</b></span></div></div>`;
+  s += `<div class="br"><span><b>÷ ${nf(0).format(d.shares / 1000)}M diluted shares</b></span><span></span><span class="v"><b>${money(d.methods[0].value)}</b></span></div></div>`;
   const tshare = isNum(b.pv_terminal) && isNum(b.ev) ? b.pv_terminal / b.ev : null;
-  return s + `<p class="axis-note">Firma değerinin ${pct(tshare, 0)}'i 2030 sonrasından geliyor${tshare > 0.75 ? " — değer uzun vadeli büyüme ve WACC varsayımına çok duyarlı." : "."}</p>`;
+  return s + `<p class="axis-note">${pct(tshare, 0)} of enterprise value comes from after 2030${tshare > 0.75 ? " — the value is highly sensitive to terminal growth and WACC." : "."}</p>`;
 }
 
 /* ---------------------------------------------------------------- result */
@@ -310,36 +310,36 @@ function verdictText(d) {
   const vals = d.methods.filter((m) => m.key !== "precedents" && isNum(m.value)).map((m) => m.value);
   const lo = Math.min(...vals), hi = Math.max(...vals), c = d.dcf_checks || {};
   const out = [];
-  out.push(`Üç yöntem <b>${money(lo)} – ${money(hi)}</b> aralığında; piyasa fiyatı <b>${money(d.price)}</b>.`);
-  if (d.price > hi) out.push(`Fiyat aralığın <b>${pct(d.price / hi - 1, 0)}</b> üzerinde: piyasa, modelin standart varsayımlarından daha yüksek büyüme veya daha düşük risk fiyatlıyor. Bu tek başına "pahalı" demek değil — önce büyüme varsayımını gözden geçirin.`);
-  else if (d.price < lo) out.push(`Fiyat aralığın <b>${pct(1 - d.price / lo, 0)}</b> altında: model piyasadan daha iyimser. Model varsayımlarının şirkete uygun olup olmadığını kontrol edin.`);
-  else out.push("Fiyat aralığın içinde: değerleme piyasayla uyumlu.");
-  if (isNum(c.implied_terminal_growth)) out.push(`<b>Ters DCF:</b> bugünkü fiyat, 2030 sonrasında yılda <b>${pct(c.implied_terminal_growth)}</b> büyüme varsayıyor (model: ${pct(d.wacc.terminal_growth)})${isNum(c.implied_wacc) ? ` — ya da WACC'nin ${pct(d.wacc.wacc)} yerine <b>${pct(c.implied_wacc)}</b> olmasını` : ""}.`);
+  out.push(`The three methods give <b>${money(lo)} – ${money(hi)}</b> per share; the market price is <b>${money(d.price)}</b>.`);
+  if (d.price > hi) out.push(`The price is <b>${pct(d.price / hi - 1, 0)}</b> above the range: the market is pricing in more growth or less risk than the model's standard assumptions. That alone does not mean "overvalued" — review the growth assumption first.`);
+  else if (d.price < lo) out.push(`The price is <b>${pct(1 - d.price / lo, 0)}</b> below the range: the model is more optimistic than the market. Check that the assumptions fit the company.`);
+  else out.push("The price is inside the range: the valuation is consistent with the market.");
+  if (isNum(c.implied_terminal_growth)) out.push(`<b>Reverse DCF:</b> today's price implies <b>${pct(c.implied_terminal_growth)}</b> annual growth after 2030 (model: ${pct(d.wacc.terminal_growth)})${isNum(c.implied_wacc) ? ` — or a WACC of <b>${pct(c.implied_wacc)}</b> instead of ${pct(d.wacc.wacc)}` : ""}.`);
   return out.map((p) => `<p>${p}</p>`).join("");
 }
 
 function reviewItems(d) {
   const out = [];
   const g = d.inputs.gm_RevenueGrowth;
-  if (g && g.status === "override") out.push(["info", `<b>Büyüme varsayımı sizin girdiniz:</b> 2026–30 her yıl ${pct(Array.isArray(g.value) ? g.value[0] : g.value)}.`]);
-  else if (g && Array.isArray(g.value)) out.push(["", `<b>Büyüme varsayımı</b> geçmişten mekanik türetildi: ${pct(g.value[0])} ile başlıyor, 2030'da ${pct(g.value[4])}'e iniyor. Şirketi tanıyorsanız aşağıdan kendi görüşünüzü girin.`]);
+  if (g && g.status === "override") out.push(["info", `<b>Revenue growth is your input:</b> ${pct(Array.isArray(g.value) ? g.value[0] : g.value)} a year for 2026–30.`]);
+  else if (g && Array.isArray(g.value)) out.push(["", `<b>Revenue growth</b> is derived mechanically from history: it starts at ${pct(g.value[0])} and fades to ${pct(g.value[4])} by 2030. If you know the company (or its guidance), enter your own view below.`]);
   const tg = d.inputs.val_TerminalGrowth;
-  if (tg && tg.status === "template_default") out.push(["", `<b>Uzun vadeli büyüme</b> standart ${pct(tg.value)} (uzun dönem enflasyon/GSYH). Değerin büyük kısmı buna bağlı.`]);
-  if ((d.peer_source || "").startsWith("automatic")) out.push(["", `<b>Emsaller otomatik seçildi</b> (aynı sektör, en yakın gelir). Uygun değilse <code>peers/${esc(d.ticker)}.csv</code> ile kendi listenizi verin.`]);
-  (d.peers_skipped || []).forEach((m) => out.push(["info", `Emsal dışarıda kaldı: ${esc(skipText(m))}`]));
-  out.push(["info", "<b>Emsal işlemler</b> (satın almalar) ücretsiz kaynakta yok; bu yöntem boş bırakıldı."]);
-  if (d.inputs.fin_DebtRate && d.inputs.fin_DebtRate.value === 0) out.push(["info", "Faiz gideri ayrı raporlanmıyor; tarihsel olarak “diğer gelirler” içinde, tahminde de orada kalıyor."]);
+  if (tg && tg.status === "template_default") out.push(["", `<b>Terminal growth</b> is the standard ${pct(tg.value)} (long-run inflation / GDP). Most of the value depends on it.`]);
+  if ((d.peer_source || "").startsWith("automatic")) out.push(["", `<b>Peers were selected automatically</b> (same industry, closest revenue). If they do not fit, provide your own list in <code>peers/${esc(d.ticker)}.csv</code>.`]);
+  (d.peers_skipped || []).forEach((m) => out.push(["info", `Peer excluded: ${esc(skipText(m))}`]));
+  out.push(["info", "<b>Precedent transactions</b> (M&A deals) have no free data source; this method is left empty."]);
+  if (d.inputs.fin_DebtRate && d.inputs.fin_DebtRate.value === 0) out.push(["info", "Interest expense is not reported separately; it sits in other income historically and stays there in the forecast."]);
   const miss = (d.missing_items || []).filter((k) => !IGNORE_MISSING.includes(k)).map((k) => ITEM_LABEL[k] || k);
-  if (miss.length) out.push(["info", `SEC'te ayrı raporlanmayan kalem: ${esc(miss.join(", "))} (modelde “diğer” kalemler içinde).`]);
-  out.push(["info", "Rakamlar Excel'de <b>bin $</b> cinsinden (50.299.697 = 50,3 milyar $)."]);
+  if (miss.length) out.push(["info", `Not reported separately in SEC data: ${esc(miss.join(", "))} (included in the model's "other" lines).`]);
+  out.push(["info", "Excel figures are in <b>USD thousands</b> (50,299,697 = $50.3B)."]);
   return out.map(([c, t]) => `<li class="${c}"><span>${t}</span></li>`).join("");
 }
 
 function skipText(m) {
   const [tk, why = ""] = String(m).split(" skipped: ");
-  if (/share count/.test(why)) return `${tk} — SEC tek bir hisse sayısı yayınlamıyor (çift sınıflı hisse yapısı)`;
-  if (/positive earnings/.test(why)) return `${tk} — pozitif kâr yok, çarpanları anlamsız`;
-  if (/Yahoo|finance/.test(why)) return `${tk} — hisse fiyatı alınamadı`;
+  if (/share count/.test(why)) return `${tk} — SEC reports no single share count (dual-class shares)`;
+  if (/positive earnings/.test(why)) return `${tk} — no positive earnings, multiples not meaningful`;
+  if (/Yahoo|finance/.test(why)) return `${tk} — share price unavailable`;
   return tk + (why ? " — " + why : "");
 }
 
@@ -359,20 +359,20 @@ function renderResult(d, keepScroll = false) {
   const overrides = d.review.filter((r) => r.status === "override");
   const gIn = d.inputs.gm_RevenueGrowth || {};
   const growth0 = Array.isArray(gIn.value) ? gIn.value[0] : isNum(gIn.value) ? gIn.value : null;
-  const growthNote = gIn.status === "override" ? `Şu an sizin girdiniz: her yıl ${pct(growth0)}` : `Otomatik: ${pct(growth0)} ile başlayıp ${pct(d.wacc.terminal_growth)}'e iner`;
+  const growthNote = gIn.status === "override" ? `Now: your input, ${pct(growth0)} every year` : `Automatic: starts at ${pct(growth0)}, fades to ${pct(d.wacc.terminal_growth)}`;
   const methodCard = (k) => {
     const x = m[k];
-    if (!x || !isNum(x.value)) return `<div class="m na"><div class="lbl">${METHOD_LABEL[k]}</div><div class="val">veri yok</div></div>`;
+    if (!x || !isNum(x.value)) return `<div class="m na"><div class="lbl">${METHOD_LABEL[k]}</div><div class="val">no data</div></div>`;
     const prem = x.value / d.price - 1;
-    return `<div class="m"><div class="lbl">${METHOD_LABEL[k]}</div><div class="val">${money(x.value)}</div><div class="vs ${prem >= 0 ? "up" : "down"}">fiyata göre ${signed(prem)}</div></div>`;
+    return `<div class="m"><div class="lbl">${METHOD_LABEL[k]}</div><div class="val">${money(x.value)}</div><div class="vs ${prem >= 0 ? "up" : "down"}">${signed(prem)} vs price</div></div>`;
   };
   const f = d.financials, yrs = d.years;
-  const finRows = [["Gelir", f.revenue, bn], ["FAVÖK", f.ebitda, bn],
-    ["FAVÖK marjı", f.ebitda.map((v, i) => (isNum(v) && f.revenue[i] ? v / f.revenue[i] : null)), (v) => pct(v)],
-    ["Net kâr", f.net_income, bn], ["Serbest nakit akışı (UFCF)", f.ufcf, bn]];
+  const finRows = [["Revenue", f.revenue, bn], ["EBITDA", f.ebitda, bn],
+    ["EBITDA margin", f.ebitda.map((v, i) => (isNum(v) && f.revenue[i] ? v / f.revenue[i] : null)), (v) => pct(v)],
+    ["Net income", f.net_income, bn], ["Unlevered free cash flow", f.ufcf, bn]];
   const peersRows = d.peers.map((p) => `<tr><td>${esc(p.name)}<div class="src-method">${esc(rationaleText(p.rationale))}</div></td><td class="num">${mult(p.ev_ebitda)}</td><td class="num">${mult(p.pe)}</td><td class="num">${mult(p.ev_revenue)}</td></tr>`).join("");
   const benchKeys = ["EBITDA Margin", "Net Profit Margin", "ROE", "Debt / EBITDA", "Revenue Growth", "Current Ratio"];
-  const benchTr = { "EBITDA Margin": "FAVÖK marjı", "Net Profit Margin": "Net kâr marjı", ROE: "Özsermaye kârlılığı", "Debt / EBITDA": "Borç / FAVÖK", "Revenue Growth": "Gelir büyümesi", "Current Ratio": "Cari oran" };
+  const benchTr = { "EBITDA Margin": "EBITDA margin", "Net Profit Margin": "Net margin", ROE: "Return on equity", "Debt / EBITDA": "Debt / EBITDA", "Revenue Growth": "Revenue growth", "Current Ratio": "Current ratio" };
   const isPct = (k) => !["Debt / EBITDA", "Current Ratio"].includes(k);
   const benchRows = d.benchmarks.filter((b) => benchKeys.includes(b.metric)).map((b) => {
     const fm = isPct(b.metric) ? (v) => pct(v) : mult;
@@ -380,70 +380,70 @@ function renderResult(d, keepScroll = false) {
   }).join("");
   const sources = Object.entries(d.inputs).filter(([k]) => INPUT_LABEL[k]).map(([k, v]) => {
     const val = Array.isArray(v.value) ? v.value.map((x) => (isNum(x) ? nf(Math.abs(x) < 1 ? 3 : 0).format(x) : "—")).join(" · ") : isNum(v.value) ? (Math.abs(v.value) < 1 ? pct(v.value, 2) : nf(2).format(v.value)) : "—";
-    const st = v.status === "override" ? '<span class="pill neutral">sizin girdiniz</span>' : v.status === "template_default" ? '<span class="pill warn">standart varsayım</span>' : "";
+    const st = v.status === "override" ? '<span class="pill neutral">your input</span>' : v.status === "template_default" ? '<span class="pill warn">standard default</span>' : "";
     return `<tr><td>${INPUT_LABEL[k]} ${st}</td><td class="num">${val}</td><td>${esc(v.source)}<div class="src-method">${esc(v.method)}</div></td><td class="muted small">${esc(v.as_of || "")}</td></tr>`;
   }).join("");
 
   $("#view-result").innerHTML = `
     <div class="res-head">
       <div>
-        <p class="eyebrow">${esc(d.ticker)} · ${esc(d.scenario || "Base")} senaryo · 5 yıllık DCF</p>
+        <p class="eyebrow">${esc(d.ticker)} · ${esc(d.scenario || "Base")} case · 5-year DCF</p>
         <h1>${esc(title(d.company))}</h1>
-        <div class="meta"><span>Fiyat <b>${money(d.price)}</b></span><span>WACC <b>${pct(d.wacc.wacc)}</b></span><span>${date(d.generated)}</span>
-          ${healthy ? '<span class="pill ok">Tüm kontroller OK</span>' : '<span class="pill crit">Kontrol gerekli</span>'}
-          ${a.lines_checked ? `<span class="pill ${a.mismatches ? "crit" : "ok"}">Denetim ${a.lines_checked - a.mismatches}/${a.lines_checked}</span>` : ""}</div>
-        ${overrides.length ? `<p class="override-note"><span class="pill neutral">Değiştirilmiş varsayım: ${overrides.map((o) => INPUT_LABEL[o.name] || o.name).join(", ")}</span></p>` : ""}
+        <div class="meta"><span>Price <b>${money(d.price)}</b></span><span>WACC <b>${pct(d.wacc.wacc)}</b></span><span>${date(d.generated)}</span>
+          ${healthy ? '<span class="pill ok">All checks OK</span>' : '<span class="pill crit">Checks need attention</span>'}
+          ${a.lines_checked ? `<span class="pill ${a.mismatches ? "crit" : "ok"}">Audit ${a.lines_checked - a.mismatches}/${a.lines_checked}</span>` : ""}</div>
+        ${overrides.length ? `<p class="override-note"><span class="pill neutral">Changed assumptions: ${overrides.map((o) => INPUT_LABEL[o.name] || o.name).join(", ")}</span></p>` : ""}
       </div>
       <div class="res-actions">
-        <button class="btn btn-primary" id="open-xl">Excel'de aç</button>
-        <a class="btn" href="/api/download?run=${encodeURIComponent(d.run)}">Excel'i indir</a>
-        <a class="btn" href="#/">Yeni şirket</a>
+        <button class="btn btn-primary" id="open-xl">Open in Excel</button>
+        <a class="btn" href="/api/download?run=${encodeURIComponent(d.run)}">Download Excel</a>
+        <a class="btn" href="#/">New company</a>
       </div>
     </div>
 
     <section class="card verdict" style="margin-top:22px" aria-labelledby="v-h">
       <div>
-        <h2 id="v-h">Değerleme</h2>
-        <p class="how">Hisse başına değer, üç bağımsız yöntemle. Nokta yöntemin sonucu, bant duyarlılık aralığı, çizgi bugünkü fiyat.</p>
+        <h2 id="v-h">Valuation</h2>
+        <p class="how">Value per share from three independent methods. Dot = the method's result, band = its sensitivity range, line = today's price.</p>
         ${footballField(d)}
         <div class="methods">${methodCard("dcf_perpetuity")}${methodCard("dcf_exit")}${methodCard("trading_comps")}</div>
       </div>
       <div>
-        <h3>Nasıl okunmalı</h3>
+        <h3>How to read this</h3>
         <div class="readout">${verdictText(d)}</div>
       </div>
     </section>
 
     <div class="grid g-2">
       <section class="card" aria-labelledby="w-h">
-        <div class="card-head"><h2 id="w-h">Sermaye maliyeti (WACC)</h2><span class="num">${pct(d.wacc.wacc, 2)}</span></div>
-        <p class="how">Şirketin nakit akışlarını bugüne indirgemek için kullanılan oran. Her girdi piyasa verisinden standart yöntemle hesaplandı.</p>
+        <div class="card-head"><h2 id="w-h">Cost of capital (WACC)</h2><span class="num">${pct(d.wacc.wacc, 2)}</span></div>
+        <p class="how">The rate used to discount the company's cash flows to today. Every input is calculated from market data with a standard method.</p>
         <dl class="kv">
-          <dt>Risksiz faiz (10 yıllık ABD tahvili)</dt><dd>${pct(d.wacc.risk_free, 2)}</dd>
-          <dt>Beta (düzeltilmiş)</dt><dd>${nf(2).format(d.wacc.beta || 0)}</dd>
-          <dt>Hisse risk primi (Damodaran)</dt><dd>${pct(d.wacc.erp, 2)}</dd>
-          <dt class="total">Özsermaye maliyeti</dt><dd class="total">${pct(d.wacc.cost_of_equity, 2)}</dd>
+          <dt>Risk-free rate (10-year US Treasury)</dt><dd>${pct(d.wacc.risk_free, 2)}</dd>
+          <dt>Beta (Blume-adjusted)</dt><dd>${nf(2).format(d.wacc.beta || 0)}</dd>
+          <dt>Equity risk premium (Damodaran)</dt><dd>${pct(d.wacc.erp, 2)}</dd>
+          <dt class="total">Cost of equity</dt><dd class="total">${pct(d.wacc.cost_of_equity, 2)}</dd>
           <span class="sep"></span>
-          <dt>Borç maliyeti (kredi notuna göre)</dt><dd>${pct(d.wacc.pretax_kd, 2)}</dd>
-          <dt>Vergi sonrası borç maliyeti</dt><dd>${pct(d.wacc.after_tax_kd, 2)}</dd>
-          <dt>Ağırlıklar (özsermaye / borç)</dt><dd>${pct(d.wacc.equity_weight, 0)} / ${pct(d.wacc.debt_weight, 0)}</dd>
+          <dt>Cost of debt (synthetic rating)</dt><dd>${pct(d.wacc.pretax_kd, 2)}</dd>
+          <dt>After-tax cost of debt</dt><dd>${pct(d.wacc.after_tax_kd, 2)}</dd>
+          <dt>Weights (equity / debt)</dt><dd>${pct(d.wacc.equity_weight, 0)} / ${pct(d.wacc.debt_weight, 0)}</dd>
           <span class="sep"></span>
           <dt class="total">WACC</dt><dd class="total">${pct(d.wacc.wacc, 2)}</dd>
-          <dt>Uzun vadeli büyüme</dt><dd>${pct(d.wacc.terminal_growth, 2)}</dd>
+          <dt>Terminal growth</dt><dd>${pct(d.wacc.terminal_growth, 2)}</dd>
         </dl>
-        <p class="formula">Özsermaye maliyeti = ${pct(d.wacc.risk_free, 2)} + ${nf(2).format(d.wacc.beta || 0)} × ${pct(d.wacc.erp, 2)}</p>
+        <p class="formula">Cost of equity = ${pct(d.wacc.risk_free, 2)} + ${nf(2).format(d.wacc.beta || 0)} × ${pct(d.wacc.erp, 2)}</p>
       </section>
       <section class="card" aria-labelledby="b-h">
-        <div class="card-head"><h2 id="b-h">Firma değerinden hisse değerine</h2></div>
-        <p class="how">DCF (büyüme yöntemi) köprüsü: nakit akışlarının bugünkü değeri, borç ve nakit düzeltmeleriyle hisse başına değere dönüşür.</p>
+        <div class="card-head"><h2 id="b-h">From enterprise value to value per share</h2></div>
+        <p class="how">DCF (perpetuity growth) bridge: the present value of cash flows, adjusted for debt, cash and investments, becomes value per share.</p>
         ${bridge(d)}
       </section>
     </div>
 
     <section class="card" style="margin-top:18px" aria-labelledby="f-h">
-      <div class="card-head"><h2 id="f-h">Finansallar</h2><span class="muted small">2023–25 gerçekleşen (SEC) · 2026–30 tahmin</span></div>
+      <div class="card-head"><h2 id="f-h">Financials</h2><span class="muted small">2023–25 actual (SEC) · 2026–30 forecast</span></div>
       ${finChart(d)}
-      <div class="legend"><span><i style="background:var(--accent)"></i>Gelir (gerçekleşen)</span><span><i style="background:var(--band)"></i>Gelir (tahmin)</span><span><i style="background:var(--ink-2);opacity:.75"></i>FAVÖK</span><span>Eksen: milyar $</span></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Revenue (actual)</span><span><i style="background:var(--band)"></i>Revenue (forecast)</span><span><i style="background:var(--ink-2);opacity:.75"></i>EBITDA</span><span>Axis: USD billions</span></div>
       <div class="table-wrap" style="margin-top:14px"><table class="tbl"><thead><tr><th></th>${yrs.map((y) => `<th class="num">${esc(y)}</th>`).join("")}</tr></thead><tbody>
         ${finRows.map(([lab, arr, fm]) => `<tr><td>${lab}</td>${arr.map((v) => `<td class="num">${fm(v)}</td>`).join("")}</tr>`).join("")}
       </tbody></table></div>
@@ -451,75 +451,100 @@ function renderResult(d, keepScroll = false) {
 
     <div class="grid g-2">
       <section class="card" aria-labelledby="s-h">
-        <div class="card-head"><h2 id="s-h">Duyarlılık</h2></div>
-        <p class="how">Hisse başına DCF değeri ($): satırlar WACC, sütunlar uzun vadeli büyüme. Yeşil fiyatın üstü, kırmızı altı; çerçeveli hücre mevcut varsayım.</p>
+        <div class="card-head"><h2 id="s-h">Sensitivity</h2></div>
+        <p class="how">DCF value per share ($): rows are WACC, columns terminal growth. Green is above the price, red below; the outlined cell is the current assumption.</p>
         ${heatmap(d)}
       </section>
       <section class="card" aria-labelledby="p-h">
-        <div class="card-head"><h2 id="p-h">Emsaller</h2><span class="muted small">${(d.peer_source || "").startsWith("analyst") ? "sizin listeniz" : "otomatik seçim"}</span></div>
-        <div class="table-wrap"><table class="tbl"><thead><tr><th>Şirket</th><th class="num">FD/FAVÖK</th><th class="num">F/K</th><th class="num">FD/Gelir</th></tr></thead><tbody>${peersRows || '<tr><td colspan="4" class="muted">Emsal bulunamadı.</td></tr>'}</tbody></table></div>
-        <h3 style="margin:16px 0 8px">Şirket emsallere göre (2030 tahmini ↔ emsallerin son yılı)</h3>
-        <div class="table-wrap"><table class="tbl"><thead><tr><th>Oran</th><th class="num">${esc(d.ticker)}</th><th class="num">Emsal aralığı</th><th class="num">Medyan</th></tr></thead><tbody>${benchRows}</tbody></table></div>
+        <div class="card-head"><h2 id="p-h">Peers</h2><span class="muted small">${(d.peer_source || "").startsWith("analyst") ? "your list" : "automatic selection"}</span></div>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Company</th><th class="num">EV/EBITDA</th><th class="num">P/E</th><th class="num">EV/Revenue</th></tr></thead><tbody>${peersRows || '<tr><td colspan="4" class="muted">No peers found.</td></tr>'}</tbody></table></div>
+        <h3 style="margin:16px 0 8px">Company vs peers (2030 forecast ↔ peers' latest year)</h3>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Ratio</th><th class="num">${esc(d.ticker)}</th><th class="num">Peer range</th><th class="num">Median</th></tr></thead><tbody>${benchRows}</tbody></table></div>
       </section>
     </div>
 
     <section class="card" style="margin-top:18px" aria-labelledby="a-h">
-      <div class="card-head"><h2 id="a-h">Varsayımları değiştir</h2></div>
-      <p class="how">Boş bırakılan alan otomatik değerini korur. Model aynı şablonla yeniden kurulur ve yeniden denetlenir; mevcut çalışma silinmez.</p>
+      <div class="card-head"><h2 id="a-h">Change assumptions</h2></div>
+      <p class="how">Empty fields keep their automatic value. The model is rebuilt from the same template and audited again; the current run is kept.</p>
       <form class="form" id="ovr" novalidate>
-        <div class="field"><label for="o-g">Gelir büyümesi (her yıl)</label><div class="inp"><input id="o-g" inputmode="decimal" placeholder="${isNum(growth0) ? nf(1).format(growth0 * 100) : ""}"><span class="unit">%</span></div><div class="now">${growthNote}</div></div>
-        <div class="field"><label for="o-t">Uzun vadeli büyüme</label><div class="inp"><input id="o-t" inputmode="decimal" placeholder="${nf(1).format((d.wacc.terminal_growth || 0) * 100)}"><span class="unit">%</span></div><div class="now">WACC (${pct(d.wacc.wacc)}) altında olmalı</div></div>
-        <div class="field"><label for="o-x">Çıkış çarpanı (FD/FAVÖK)</label><div class="inp"><input id="o-x" inputmode="decimal" placeholder="${nf(1).format(d.bridge.exit_multiple || 0)}"><span class="unit">x</span></div><div class="now">Otomatik: sektör ortalaması</div></div>
+        <div class="field"><label for="o-g">Revenue growth (every year)</label><div class="inp"><input id="o-g" inputmode="decimal" placeholder="${isNum(growth0) ? nf(1).format(growth0 * 100) : ""}"><span class="unit">%</span></div><div class="now">${growthNote}</div></div>
+        <div class="field"><label for="o-t">Terminal growth</label><div class="inp"><input id="o-t" inputmode="decimal" placeholder="${nf(1).format((d.wacc.terminal_growth || 0) * 100)}"><span class="unit">%</span></div><div class="now">Must be below WACC (${pct(d.wacc.wacc)})</div></div>
+        <div class="field"><label for="o-x">Exit multiple (EV/EBITDA)</label><div class="inp"><input id="o-x" inputmode="decimal" placeholder="${nf(1).format(d.bridge.exit_multiple || 0)}"><span class="unit">x</span></div><div class="now">Automatic: industry average</div></div>
       </form>
-      <div class="form-actions"><button class="btn btn-primary" id="rerun">Yeniden hesapla</button><span class="form-err" id="ovr-err" role="alert"></span></div>
+      <div class="form-actions"><button class="btn btn-primary" id="rerun">Rebuild model</button><span class="form-err" id="ovr-err" role="alert"></span></div>
     </section>
 
     <div class="grid g-2">
       <section class="card" aria-labelledby="c-h">
-        <div class="card-head"><h2 id="c-h">Kontroller</h2></div>
-        <p class="how">Modelin kendi kontrolleri, Excel hata taraması ve Python ile bağımsız yeniden hesaplama.</p>
+        <div class="card-head"><h2 id="c-h">Checks</h2></div>
+        <p class="how">The model's own checks, an Excel error scan and an independent recalculation in Python.</p>
         <div class="checks">${Object.entries(d.health || {}).map(([k, v]) => `<span class="pill ${v === "OK" ? "ok" : v === "n/a" ? "neutral" : "crit"}">${esc(k)} ${esc(v)}</span>`).join("")}</div>
         <dl class="kv">
-          <dt>Excel hata hücresi</dt><dd>${(d.errors || []).length}</dd>
-          <dt>Bağımsız denetim (tahmin satır-yılı)</dt><dd>${a.lines_checked ? `${a.lines_checked - a.mismatches} / ${a.lines_checked}` : "—"}</dd>
-          <dt>Geçmiş oranlar SEC ile</dt><dd>${a.historical_ratio_issues && !a.historical_ratio_issues.length ? "eşleşiyor" : "—"}</dd>
-          <dt>DCF (Excel = Python)</dt><dd>${d.dcf_checks && d.dcf_checks.ev_match ? "eşleşiyor" : "—"}</dd>
+          <dt>Excel error cells</dt><dd>${(d.errors || []).length}</dd>
+          <dt>Independent audit (forecast line-years)</dt><dd>${a.lines_checked ? `${a.lines_checked - a.mismatches} / ${a.lines_checked}` : "—"}</dd>
+          <dt>Historical ratios vs SEC</dt><dd>${a.historical_ratio_issues && !a.historical_ratio_issues.length ? "match" : "—"}</dd>
+          <dt>DCF (Excel = Python)</dt><dd>${d.dcf_checks && d.dcf_checks.ev_match ? "match" : "—"}</dd>
         </dl>
       </section>
       <section class="card" aria-labelledby="r-h">
-        <div class="card-head"><h2 id="r-h">Sunmadan önce bakın</h2></div>
+        <div class="card-head"><h2 id="r-h">Review before presenting</h2></div>
         <ul class="review">${reviewItems(d)}</ul>
       </section>
     </div>
 
     <section class="card" style="margin-top:18px">
-      <details class="sources"><summary>Veri kaynakları ve varsayımlar (${Object.keys(d.inputs).filter((k) => INPUT_LABEL[k]).length})</summary>
-        <div class="table-wrap"><table class="tbl"><thead><tr><th>Girdi</th><th class="num">Değer</th><th>Kaynak ve yöntem</th><th>Tarih</th></tr></thead><tbody>${sources}</tbody></table></div>
+      <details class="sources"><summary>Data sources and assumptions (${Object.keys(d.inputs).filter((k) => INPUT_LABEL[k]).length})</summary>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Input</th><th class="num">Value</th><th>Source and method</th><th>As of</th></tr></thead><tbody>${sources}</tbody></table></div>
       </details>
     </section>`;
 
   $("#open-xl").onclick = async () => {
-    try { await api("/api/open", { method: "POST", body: JSON.stringify({ run: d.run }) }); toast("Excel'de açılıyor…"); }
+    try { await api("/api/open", { method: "POST", body: JSON.stringify({ run: d.run }) }); toast("Opening in Excel…"); }
     catch (e) { toast(e.message); }
   };
   $("#rerun").onclick = () => {
     const err = $("#ovr-err"); err.textContent = "";
-    const read = (id) => { const s = $(id).value.trim().replace(",", "."); return s === "" ? null : Number(s); };
+    const read = (id) => { const s = $(id).value.trim().replace("%", ""); return s === "" ? null : Number(s); };
     const g = read("#o-g"), t = read("#o-t"), x = read("#o-x");
-    if ([g, t, x].some((v) => v !== null && !isFinite(v))) return (err.textContent = "Sayı girin (ör. 4,5).");
-    if (t !== null && t / 100 >= d.wacc.wacc) return (err.textContent = `Uzun vadeli büyüme WACC'den (${pct(d.wacc.wacc)}) düşük olmalı.`);
-    if (x !== null && (x < 1 || x > 80)) return (err.textContent = "Çıkış çarpanı 1–80x aralığında olmalı.");
+    if ([g, t, x].some((v) => v !== null && !isFinite(v))) return (err.textContent = "Enter a number (e.g. 4.5).");
+    if (t !== null && t / 100 >= d.wacc.wacc) return (err.textContent = `Terminal growth must be below WACC (${pct(d.wacc.wacc)}).`);
+    if (x !== null && (x < 1 || x > 80)) return (err.textContent = "Exit multiple must be between 1x and 80x.");
     const o = {};
     if (g !== null) o.revenue_growth = g / 100;
     if (t !== null) o.terminal_growth = t / 100;
     if (x !== null) o.exit_multiple = x;
-    if (!Object.keys(o).length) return (err.textContent = "Değiştirmek için en az bir alan doldurun.");
+    if (!Object.keys(o).length) return (err.textContent = "Fill in at least one field to change.");
     startRun(d.ticker, o);
   };
   if (!keepScroll) window.scrollTo(0, 0);
 }
 
+/* ---------------------------------------------------------------- quit */
+function bindQuit() {
+  const b = $("#quit");
+  let armed = null;
+  const reset = () => { b.textContent = "Quit"; b.classList.remove("arm"); armed = null; };
+  const stop = async (force) => {
+    try {
+      await api("/api/quit", { method: "POST", body: JSON.stringify({ force }) });
+    } catch (e) {
+      if (e.status === 409) { b.textContent = "Model running — click to quit anyway"; b.classList.add("arm"); armed = "force"; return; }
+    }
+    clearTimeout(pollTimer);
+    show("view-stopped");
+    document.title = "Lunoviq (stopped)";
+    b.hidden = true;
+  };
+  b.addEventListener("click", () => {
+    if (armed === "force") return stop(true);
+    if (armed) { clearTimeout(armed); return stop(false); }
+    b.textContent = "Click again to quit"; b.classList.add("arm");
+    armed = setTimeout(reset, 3000);
+  });
+}
+
 /* ---------------------------------------------------------------- boot */
+bindQuit();
 bindSearch($("#search-home"));
 bindSearch($("#search-top"));
 route();

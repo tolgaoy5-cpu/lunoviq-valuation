@@ -2,8 +2,8 @@
 Trading-comparables peer set.
 
 Selection, in order of precedence:
-  1. peers/<TICKER>.csv  (ticker,karar,gerekce): an analyst's documented choice;
-     rows marked DAHIL are used, each with its written rationale
+  1. peers/<TICKER>.csv  (ticker,decision,rationale): an analyst's documented choice;
+     rows marked INCLUDE are used, each with its written rationale
   2. automatic: US-listed companies in the same Damodaran industry, ranked by
      closeness of annual revenue to the target (SEC XBRL frames, one call for
      all filers); share classes of one company count once; peers with
@@ -54,10 +54,13 @@ def manual_peers(ticker):
     if not f.exists():
         return None
     rows = list(csv.DictReader(open(f, encoding="utf-8")))
-    chosen = [(r["ticker"].strip().upper(), r["gerekce"].strip()) for r in rows
-              if r["karar"].strip().upper().startswith("DAHIL")]
-    excluded = [(r["ticker"].strip().upper(), r["gerekce"].strip()) for r in rows
-                if not r["karar"].strip().upper().startswith("DAHIL")]
+    # columns ticker,decision,rationale (INCLUDE/EXCLUDE); the original Turkish
+    # layout ticker,karar,gerekce (DAHIL/HARIC) is still accepted
+    dec = lambda r: (r.get("decision") or r.get("karar") or "").strip().upper()
+    why = lambda r: (r.get("rationale") or r.get("gerekce") or "").strip()
+    keep = lambda r: dec(r).startswith(("INCLUDE", "DAHIL"))
+    chosen = [(r["ticker"].strip().upper(), why(r)) for r in rows if keep(r)]
+    excluded = [(r["ticker"].strip().upper(), why(r)) for r in rows if not keep(r)]
     return chosen, excluded, str(f.relative_to(config.ROOT))
 
 

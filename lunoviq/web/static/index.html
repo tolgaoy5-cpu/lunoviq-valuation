@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -11,58 +11,67 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#/" aria-label="Lunoviq ana sayfa"><span class="mark" aria-hidden="true"></span>Lunoviq</a>
+  <a class="brand" href="#/" aria-label="Lunoviq home"><span class="mark" aria-hidden="true"></span>Lunoviq</a>
   <form class="search search-compact" id="search-top" role="search" autocomplete="off" hidden>
-    <label class="sr" for="q-top">Hisse kodu veya şirket adı</label>
-    <input id="q-top" name="q" placeholder="Hisse kodu veya şirket (ör. KO, Microsoft)" spellcheck="false">
+    <label class="sr" for="q-top">Ticker or company name</label>
+    <input id="q-top" name="q" placeholder="Ticker or company (e.g. KO, Microsoft)" spellcheck="false">
     <ul class="suggest" role="listbox" hidden></ul>
   </form>
-  <nav class="toplinks"><a href="#/">Geçmiş çalışmalar</a></nav>
+  <nav class="toplinks"><a href="#/">Previous runs</a><button type="button" class="linkbtn" id="quit">Quit</button></nav>
 </header>
 
 <main id="app" tabindex="-1">
   <!-- home -->
   <section class="view" id="view-home" hidden>
     <div class="hero">
-      <p class="eyebrow">Hisse kodundan denetlenmiş değerleme modeline</p>
-      <h1>Hangi şirketi değerleyelim?</h1>
-      <p class="lede">SEC finansalları, piyasa verisi ve sektör emsalleri otomatik çekilir; model Excel'de kurulur, hesaplatılır ve bağımsız olarak denetlenir. Yaklaşık 1–2 dakika.</p>
+      <p class="eyebrow">From ticker to audited valuation model</p>
+      <h1>Which company should we value?</h1>
+      <p class="lede">SEC financials, market data and industry peers are fetched automatically; the model is built and recalculated in Excel, then independently audited. About 1–2 minutes.</p>
       <form class="search search-hero" id="search-home" role="search" autocomplete="off">
-        <label class="sr" for="q-home">Hisse kodu veya şirket adı</label>
-        <input id="q-home" name="q" placeholder="Hisse kodu veya şirket adı — ör. KO, Johnson, NVDA" spellcheck="false" autofocus>
-        <button type="submit" class="btn btn-primary">Modeli oluştur</button>
+        <label class="sr" for="q-home">Ticker or company name</label>
+        <input id="q-home" name="q" placeholder="Ticker or company name — e.g. KO, Johnson, NVDA" spellcheck="false" autofocus>
+        <button type="submit" class="btn btn-primary">Build model</button>
         <ul class="suggest" role="listbox" hidden></ul>
       </form>
-      <p class="hint">Yalnızca ABD'de SEC'e rapor veren şirketler. Rakamlar ABD doları.</p>
+      <p class="hint">US companies that file with the SEC. All figures in US dollars.</p>
     </div>
     <section class="recent" aria-labelledby="recent-h">
-      <div class="section-head"><h2 id="recent-h">Geçmiş çalışmalar</h2><span class="muted" id="recent-count"></span></div>
+      <div class="section-head"><h2 id="recent-h">Previous runs</h2><span class="muted" id="recent-count"></span></div>
       <div class="table-wrap"><table class="tbl" id="recent-table">
-        <thead><tr><th>Şirket</th><th class="num">Fiyat</th><th class="num">DCF (büyüme)</th><th class="num">DCF (çarpan)</th><th class="num">Emsaller</th><th>Tarih</th><th>Durum</th></tr></thead>
+        <thead><tr><th>Company</th><th class="num">Price</th><th class="num">DCF (growth)</th><th class="num">DCF (multiple)</th><th class="num">Comparables</th><th>Date</th><th>Status</th></tr></thead>
         <tbody></tbody>
       </table></div>
-      <p class="empty" id="recent-empty" hidden>Henüz çalışma yok. Yukarıdan bir şirket seçin.</p>
+      <p class="empty" id="recent-empty" hidden>No runs yet. Pick a company above.</p>
     </section>
   </section>
 
   <!-- running -->
   <section class="view" id="view-run" hidden>
     <div class="run-card" aria-live="polite">
-      <p class="eyebrow" id="run-eyebrow">Model hazırlanıyor</p>
+      <p class="eyebrow" id="run-eyebrow">Building the model</p>
       <h1 id="run-title"></h1>
       <ol class="steps" id="run-steps"></ol>
-      <p class="muted small" id="run-note">Excel arka planda ayrı bir pencerede hesaplıyor; açık dosyalarınız etkilenmez.</p>
+      <p class="muted small" id="run-note">Excel recalculates in a separate background instance; your open files are not affected.</p>
     </div>
   </section>
 
   <!-- error -->
   <section class="view" id="view-error" hidden>
     <div class="run-card error-card" role="alert">
-      <p class="eyebrow">Model oluşturulamadı</p>
+      <p class="eyebrow">The model could not be built</p>
       <h1 id="err-title"></h1>
       <p id="err-msg" class="lede"></p>
-      <details><summary>Teknik ayrıntı</summary><pre id="err-detail"></pre></details>
-      <div class="actions"><a class="btn" href="#/">Başka bir şirket seç</a><button class="btn btn-primary" id="err-retry">Tekrar dene</button></div>
+      <details><summary>Technical detail</summary><pre id="err-detail"></pre></details>
+      <div class="actions"><a class="btn" href="#/">Choose another company</a><button class="btn btn-primary" id="err-retry">Try again</button></div>
+    </div>
+  </section>
+
+  <!-- stopped -->
+  <section class="view" id="view-stopped" hidden>
+    <div class="run-card">
+      <p class="eyebrow">Lunoviq stopped</p>
+      <h1>You can close this tab.</h1>
+      <p class="lede">Open Lunoviq again from its app icon (Applications or the Dock) whenever you need it.</p>
     </div>
   </section>
 

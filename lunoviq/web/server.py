@@ -13,6 +13,7 @@ API
     GET  /api/summary?run=<dir>       summary of a previous run
     GET  /api/download?run=<dir>      the Excel model
     POST /api/open {run}              open the model in Excel (macOS)
+    POST /api/quit                    stop the server (from the UI's Quit link)
 """
 import json
 import queue
@@ -38,8 +39,8 @@ OVERRIDES = {
     "terminal_growth": ("val_TerminalGrowth", -0.02, 0.05),
     "exit_multiple": ("val_ExitMultiple", 1.0, 80.0),
 }
-LABELS = {"revenue_growth": "Gelir büyümesi", "terminal_growth": "Uzun vadeli büyüme",
-          "exit_multiple": "Çıkış çarpanı"}
+LABELS = {"revenue_growth": "Revenue growth", "terminal_growth": "Terminal growth",
+          "exit_multiple": "Exit multiple"}
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png"}
 
@@ -57,15 +58,15 @@ def friendly_error(exc):
     from ..providers.sec_xbrl import DataError
     msg = str(exc)
     if isinstance(exc, DataError):
-        return "SEC bu şirket için modeli kurmaya yetecek yıllık (10-K) veri yayınlamıyor.", msg, False
+        return "SEC does not publish enough annual (10-K) data for this company to build the model.", msg, False
     if isinstance(exc, LookupError) and "Ticker not found" in msg:
-        return ("Bu hisse kodu SEC listesinde bulunamadı. Yalnızca ABD'de SEC'e rapor veren şirketler "
-                "destekleniyor.", msg, False)
+        return ("This ticker is not in the SEC list. Only US companies that file with the SEC are "
+                "supported.", msg, False)
     if "Yahoo" in msg or "finance.yahoo" in msg:
-        return "Hisse fiyatı alınamadı (Yahoo). Birkaç dakika sonra tekrar deneyin.", msg, True
+        return "The share price could not be fetched (Yahoo). Try again in a few minutes.", msg, True
     if "sec.gov" in msg:
-        return "SEC'e ulaşılamadı. İnternet bağlantısını kontrol edip tekrar deneyin.", msg, True
-    return "Model oluşturulurken beklenmeyen bir hata oldu.", msg, True
+        return "SEC could not be reached. Check your internet connection and try again.", msg, True
+    return "An unexpected error occurred while building the model.", msg, True
 
 
 def worker():
@@ -172,11 +173,11 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 return self._json(search(q.get("q", "")))
             except Exception:                        # noqa: BLE001
-                return self._json({"error": "Şirket listesi yüklenemedi."}, 503)
+                return self._json({"error": "The company list could not be loaded."}, 503)
         if u.path.startswith("/api/runs/"):
             job = JOBS.get(u.path.rsplit("/", 1)[-1])
             if not job:
-                return self._json({"error": "İş bulunamadı."}, 404)
+                return self._json({"error": "Job not found."}, 404)
             pos = list(QUEUE.queue).index(job["id"]) + 1 if job["id"] in list(QUEUE.queue) else 0
             return self._json({k: v for k, v in job.items() if k != "overrides"} | {"queue_position": pos})
         if u.path == "/api/history":
@@ -184,13 +185,13 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/summary":
             p = run_path(q.get("run"))
             if not p or not (p / "summary.json").exists():
-                return self._json({"error": "Çalışma bulunamadı."}, 404)
+                return self._json({"error": "Run not found."}, 404)
             return self._json(json.loads((p / "summary.json").read_text()) | {"run": p.name})
         if u.path == "/api/download":
             p = run_path(q.get("run"))
             files = list(p.glob("*_Model.xlsx")) if p else []
             if not files:
-                return self._json({"error": "Dosya bulunamadı."}, 404)
+                return self._json({"error": "File not found."}, 404)
             data = files[0].read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -224,7 +225,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/runs":
             ticker = str(body.get("ticker", "")).strip().upper()
             if not TICKER_RE.match(ticker):
-                return self._json({"error": "Geçerli bir hisse kodu girin (ör. KO, MSFT)."}, 400)
+                return self._json({"error": "Enter a valid ticker (e.g. KO, MSFT)."}, 400)
             overrides = {}
             for k, v in (body.get("overrides") or {}).items():
                 if k not in OVERRIDES or v in (None, ""):
@@ -232,36 +233,43 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     v = float(v)
                 except (TypeError, ValueError):
-                    return self._json({"error": "%s bir sayı olmalı." % LABELS[k]}, 400)
+                    return self._json({"error": "%s must be a number." % LABELS[k]}, 400)
                 lo, hi = OVERRIDES[k][1:]
                 if not lo <= v <= hi:
-                    fmt = (lambda x: "%g" % x) if k == "exit_multiple" else (lambda x: "%%%g" % (x * 100))
-                    return self._json({"error": "%s %s ile %s arasında olmalı." % (LABELS[k], fmt(lo), fmt(hi))}, 400)
+                    fmt = (lambda x: "%gx" % x) if k == "exit_multiple" else (lambda x: "%g%%" % (x * 100))
+                    return self._json({"error": "%s must be between %s and %s." % (LABELS[k], fmt(lo), fmt(hi))}, 400)
                 overrides[k] = v
             if "terminal_growth" in overrides and overrides["terminal_growth"] >= 0.05:
-                return self._json({"error": "Uzun vadeli büyüme WACC'den düşük olmalı."}, 400)
+                return self._json({"error": "Terminal growth must be below WACC."}, 400)
             job_id = uuid.uuid4().hex[:12]
             JOBS[job_id] = {"id": job_id, "ticker": ticker, "overrides": overrides, "status": "queued",
                             "step": None, "error": None}
             QUEUE.put(job_id)
             return self._json({"job": job_id}, 202)
+        if u.path == "/api/quit":
+            busy = any(j["status"] in ("queued", "running") for j in JOBS.values())
+            if busy and not body.get("force"):
+                return self._json({"error": "A model is still being built. Quit anyway?", "busy": True}, 409)
+            self._json({"ok": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return None
         if u.path == "/api/open":
             p = run_path(body.get("run"))
             files = list(p.glob("*_Model.xlsx")) if p else []
             if not files:
-                return self._json({"error": "Dosya bulunamadı."}, 404)
+                return self._json({"error": "File not found."}, 404)
             if sys.platform == "darwin":
                 subprocess.run(["open", str(files[0])], check=False)
                 return self._json({"ok": True})
-            return self._json({"error": "Excel'de açma yalnızca macOS'ta destekleniyor; dosyayı indirin."}, 501)
-        return self._json({"error": "Bilinmeyen istek."}, 404)
+            return self._json({"error": "Opening in Excel is supported on macOS only; download the file instead."}, 501)
+        return self._json({"error": "Unknown request."}, 404)
 
 
 def serve(port=8765, open_browser=True):
     threading.Thread(target=worker, daemon=True).start()
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = "http://127.0.0.1:%d" % port
-    print("Lunoviq çalışıyor: %s   (kapatmak için Ctrl+C)" % url)
+    print("Lunoviq is running at %s   (Ctrl+C to stop)" % url)
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

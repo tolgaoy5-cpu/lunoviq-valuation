@@ -271,3 +271,20 @@ Planned fix (drafted, not applied):
     - "retry" was shown for errors that can't be retried.
 - **Launcher:** `Lunoviq.command` now starts the web app, or just opens the browser if the app is already running.
 - **Tests:** 63 passed (`RUN_EXCEL_TESTS=1`), including 13 new web API tests with a stubbed pipeline.
+
+## 2026-09-25: English product, number formats, Mac app
+
+Requested by the user.
+
+- **English everywhere, for the web UI and Excel.**
+  - UI strings, the server's error messages and number formats are now English (for example $55.37, $47.9B, 7.1%).
+  - Excel's remaining Turkish text is translated: data-feed tag notes ("NOT FOUND", "reconciling line", "incl. minority interest"), the audit-trail heading, and the model notes.
+  - `peers/KO.csv` is translated to English, with new columns ticker/decision/rationale using INCLUDE/EXCLUDE. The Turkish layout is still accepted, and the original file is backed up in `backups/`.
+  - Chat with the user stays in Turkish.
+- **Excel number formats.** Amounts in USD thousands and period counts no longer show decimals; the `#,##0.0` and `0.0` formats become whole numbers. Per-share prices, percentages and multiples keep their decimals. The DCF, sensitivity and comparables sheets get an "All figures in USD thousands…" note under the title. The other sheets already had one.
+- **Mac app** (`tools/make_mac_app.py` builds `~/Applications/Lunoviq.app` with its own icon).
+  - Double-click starts the server in the background, with no Terminal window, and opens the browser. If the server is already running, it just opens the browser.
+  - The log is at `~/Library/Logs/Lunoviq.log`.
+  - Verified: launched from its icon, the app built a full PEP model through Excel.
+- **Quit.** There is a "Quit" link in the top bar with a double-click confirmation, and a warning while a model is being built. It calls the new `POST /api/quit` endpoint.
+- **Tests:** 57 passed (fast suite), including a new quit test.

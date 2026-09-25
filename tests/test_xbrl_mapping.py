@@ -102,7 +102,7 @@ def test_operating_expense_reconciliation():
     s, used, _ = sec_xbrl.build_feed(f, 3)
     other = s["Other Operating Expense"][2025]
     assert 100 - 40 - 10 - other - 5 == 20
-    assert "mutabakat" in used["Other Operating Expense"]
+    assert "reconciling line" in used["Other Operating Expense"]
 
 
 def test_current_tax_components_summed():

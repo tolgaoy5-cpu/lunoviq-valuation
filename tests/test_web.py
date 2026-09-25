@@ -78,10 +78,10 @@ def test_search_exact_then_prefix_then_name(base):
 
 
 @pytest.mark.parametrize("body,msg", [
-    ({"ticker": "../etc"}, "Geçerli bir hisse kodu"),
-    ({"ticker": ""}, "Geçerli bir hisse kodu"),
-    ({"ticker": "KO", "overrides": {"terminal_growth": 0.2}}, "Uzun vadeli büyüme"),
-    ({"ticker": "KO", "overrides": {"exit_multiple": "abc"}}, "Çıkış çarpanı bir sayı"),
+    ({"ticker": "../etc"}, "Enter a valid ticker"),
+    ({"ticker": ""}, "Enter a valid ticker"),
+    ({"ticker": "KO", "overrides": {"terminal_growth": 0.2}}, "Terminal growth"),
+    ({"ticker": "KO", "overrides": {"exit_multiple": "abc"}}, "Exit multiple must be a number"),
 ])
 def test_invalid_requests_rejected_in_turkish(base, body, msg):
     code, res = call(base, "/api/runs", body)
@@ -116,3 +116,19 @@ def test_history_summary_download(base):
 def test_path_traversal_blocked(base, path):
     code, _ = call(base, path)
     assert code == 404
+
+
+def test_quit_refused_while_busy_then_stops():
+    """Separate server: quitting with a running job needs force; then the server stops."""
+    server.JOBS["busy1"] = {"id": "busy1", "status": "running"}
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    t = threading.Thread(target=httpd.serve_forever, daemon=True)
+    t.start()
+    base = "http://127.0.0.1:%d" % httpd.server_address[1]
+    code, res = call(base, "/api/quit", {})
+    assert code == 409 and res["busy"]
+    code, res = call(base, "/api/quit", {"force": True})
+    assert code == 200
+    t.join(timeout=5)
+    assert not t.is_alive()
+    del server.JOBS["busy1"]

@@ -54,6 +54,10 @@ h3 { font-size: 16px; font-family: var(--sans); font-weight: 600; }
 .toplinks { margin-left: auto; font-size: 14px; }
 .toplinks a { color: var(--muted); text-decoration: none; }
 .toplinks a:hover { color: var(--ink); }
+.toplinks { display: flex; gap: 18px; align-items: center; }
+.linkbtn { font: inherit; color: var(--muted); background: none; border: 0; padding: 0; cursor: pointer; }
+.linkbtn:hover { color: var(--ink); }
+.linkbtn.arm { color: var(--crit); font-weight: 500; }
 
 main { padding-inline: 16px; padding-block: 28px 64px; outline: none; }
 .view { max-width: 1180px; margin: 0 auto; }

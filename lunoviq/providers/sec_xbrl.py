@@ -169,6 +169,9 @@ ORDER = ["Revenue", "Cost of Goods Sold", "SG&A", "Other Operating Expense",
          "Current Assets (reported)", "Current Liabilities (reported)"]
 
 
+NOT_FOUND = "NOT FOUND"   # tag marker shown in 08_Data_Feed column F
+
+
 class DataError(ValueError):
     """Sirketin SEC verisi modeli kurmaya yetmiyor."""
 
@@ -317,14 +320,14 @@ def build_feed(facts, n_years=3):
     """{kalem: {yil: deger}} + hangi etiketin kullanildigi."""
     fye = fiscal_year_ends(facts)
     if not fye:
-        raise DataError("SEC companyfacts icinde 10-K gelir kaydi yok (mali yil sonu bulunamadi). "
-                        "Sirket yillik veriyi XBRL'de yayinlamamis olabilir.")
+        raise DataError("SEC companyfacts has no 10-K revenue facts (no fiscal year end found). "
+                        "The company may not publish annual data in XBRL.")
     series, used = {}, {}
     for item in ORDER:
         if item in TAGS:
             s, u = pick(facts, TAGS[item], fye)
             series[item] = {k: v[0] for k, v in s.items()}
-            used[item] = u or "BULUNAMADI"
+            used[item] = u or NOT_FOUND
 
         elif item in SUMS:
             # "single" (tek etikette toplam) EN DUSUK oncelikli tarif olarak eklenir.
@@ -361,12 +364,12 @@ def build_feed(facts, n_years=3):
                             uniq.append(notes[y])
                     used[item] = " | ".join(uniq)
                 else:
-                    used[item] = "BULUNAMADI"
+                    used[item] = NOT_FOUND
 
         elif item == "Shares Outstanding":
             s, u = pick(facts, SHARES, fye)
             series[item] = {k: v[0] for k, v in s.items()}
-            used[item] = u or "BULUNAMADI"
+            used[item] = u or NOT_FOUND
 
     # ---- Bilancoyu denklestiren tamamlayicilar --------------------------------
     # Model dort aktif ve uc pasif kalemi taniyor. Gercek bir sirkette serefiye,
@@ -417,7 +420,7 @@ def build_feed(facts, n_years=3):
         oi = g("Operating Income (reported)", y)
         if oi is None and g("Pre-tax Income (reported)", y) is not None:
             oi = g("Pre-tax Income (reported)", y) + abs(g("Interest Expense", y) or 0)
-            how.add("vergi oncesi kar + faiz gideri")
+            how.add("pre-tax income + interest expense")
         elif oi is not None:
             how.add("OperatingIncomeLoss")
         rev, da = g("Revenue", y), g("Depreciation & Amortisation", y)
@@ -427,22 +430,22 @@ def build_feed(facts, n_years=3):
     if recon:
         tagged = series.get("Other Operating Expense", {})
         series["Other Operating Expense"] = {**tagged, **recon}
-        used["Other Operating Expense"] = ("Revenue - COGS - SG&A - (faaliyet kari + D&A) "
-                                           "[mutabakat kalemi; faaliyet kari: %s]" % ", ".join(sorted(how)))
+        used["Other Operating Expense"] = ("Revenue - COGS - SG&A - (operating income + D&A) "
+                                           "[reconciling line; operating income: %s]" % ", ".join(sorted(how)))
 
     series["Other Assets (plug)"] = oa
     series["Other Liabilities (plug)"] = ol
     series["Other Equity (plug)"] = oe
     used["Other Assets (plug)"] = "Assets - (Cash+AR+Inv+PPE)"
     used["Other Liabilities (plug)"] = "Liabilities - (AP+Debt+DTL)"
-    used["Other Equity (plug)"] = "(Assets - Liabilities) - (Common+Retained)  [azinlik paylari dahil]"
+    used["Other Equity (plug)"] = "(Assets - Liabilities) - (Common+Retained)  [incl. minority interest]"
 
     # Yillar: 10-K'si olan ve geliri bulunan mali yillar. Eskiden tum serilerin
     # birlesimi aliniyordu; tek bir kalemde gorulen kapanmamis yil (orn. AMZN
     # "2026") modele giriyordu.
     years = sorted(y for y in fye if y in series.get("Revenue", {}))[-n_years:]
     if not years:
-        raise DataError("10-K gelir verisi bulunamadi.")
+        raise DataError("No 10-K revenue data found.")
     return series, used, years
 
 
@@ -569,7 +572,7 @@ def main():
         series, used, years = build_feed(facts, a.years)
     except DataError as e:
         raise SystemExit("%s: %s" % (a.ticker, e))
-    missing = [k for k, v in used.items() if v == "BULUNAMADI"]
+    missing = [k for k, v in used.items() if v == NOT_FOUND]
 
     out = a.out or "%s_Model.xlsx" % re.sub(r"\W+", "_", company)[:40]
     write_model(a.model, out, company, cik, series, used, years)
@@ -579,10 +582,10 @@ def main():
     print("Yazildi: %s" % out)
     for item in ORDER:
         vals = [series[item].get(y) for y in years]
-        flag = "  <-- BULUNAMADI" if used.get(item) == "BULUNAMADI" else ""
+        flag = "  <-- NOT FOUND" if used.get(item) == NOT_FOUND else ""
         print("  %-30s %s%s" % (item, ["%.0f" % (v/1000) if v else "-" for v in vals], flag))
     if missing:
-        print("\nBULUNAMADI (%d) - elle doldur: %s" % (len(missing), ", ".join(missing)))
+        print("\nNOT FOUND (%d) - fill in manually: %s" % (len(missing), ", ".join(missing)))
 
     print("""
 SIRADAKI ADIMLAR (model bunlar yapilmadan tamam degildir)

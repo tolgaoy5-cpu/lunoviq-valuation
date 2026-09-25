@@ -47,9 +47,37 @@ def tidy(wb):
     comp.column_dimensions["J"].width = 60           # peer rationale
     comp.column_dimensions["K"].width = 16           # market cap
     inp = wb["01_Inputs_Historicals"]
-    if isinstance(inp["C102"].value, str) and "hacim" in inp["C102"].value:
-        inp["C102"].value = ("Unit Economics = volume x price (needs internal data). Growth-Margin = revenue "
-                             "growth and cost margins from filings; used for listed companies.")
+    english = {
+        ("01_Inputs_Historicals", "C102"): ("hacim", "Unit Economics = volume x price (needs internal data). "
+                                            "Growth-Margin = revenue growth and cost margins from filings; "
+                                            "used for listed companies."),
+        ("01_Inputs_Historicals", "C95"): ("Kullanim", "If utilisation exceeds the trigger, a capacity block is "
+                                           "added the next year; expansion capex flows into cash flow."),
+        ("08_Data_Feed", "A36"): ("denetim", "Reported Totals (audit trail)"),
+    }
+    for (sheet, ref), (marker, text) in english.items():
+        cell = wb[sheet][ref]
+        if isinstance(cell.value, str) and marker in cell.value:
+            cell.value = text
+    # whole-number display: amounts are in USD thousands and periods are counts, so the
+    # template's one-decimal formats carry no information; share prices, %, x keep decimals
+    whole = {"#,##0.0;[Red](#,##0.0);-": "#,##0;[Red](#,##0);-",
+             "#,##0.0;[Red]\\(#,##0.0\\);\\-": "#,##0;[Red]\\(#,##0\\);\\-", "0.0": "0"}
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for c in row:
+                if c.number_format in whole:
+                    c.number_format = whole[c.number_format]
+    # unit note under each sheet title that lacks one
+    from openpyxl.styles import Font
+    notes = {"04_DCF_Valuation": "All figures in USD thousands unless stated; per-share values in USD",
+             "05_Sensitivity": "Per-share values in USD; enterprise values in USD thousands",
+             "06_Comparable_Valuation": "All figures in USD thousands unless stated; per-share values in USD; multiples in x"}
+    for sheet, text in notes.items():
+        ws = wb[sheet]
+        if ws["A2"].value is None:
+            ws["A2"].value = text
+            ws["A2"].font = Font(name="Arial", size=9, italic=True, color="5E6B78")
 
 
 def clear_precedents(wb):
