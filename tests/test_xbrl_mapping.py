@@ -140,3 +140,27 @@ def test_working_capital_capex_life_payout():
     assert d["drv_CapexPct"].value == pytest.approx((0.05 + 0.05 + 0.10) / 3, abs=1e-4)
     assert d["drv_LifeExisting"].value == 10 and d["drv_Payout"].value == pytest.approx(0.2)
     assert d["hist_TaxBasisPPE"].value == [0.04, 0.04, 0.08]
+
+
+# ---------------------------------------------------------------- interest double-count rules
+def test_net_interest_and_nonop_exclude_interest_income():
+    """KO: interest income moves from non-operating income into net interest, so the
+    forecast (which earns interest on cash) does not count it twice."""
+    st = _st(revenue=[100, 100, 100], cogs=[40, 40, 40], sga=[20, 20, 20], d_and_a=[5, 5, 5],
+             interest_expense=[4, 4, 4], interest_income=[1, 1, 1], pretax_income=[33, 33, 33],
+             income_tax_total=[7, 7, 7], current_tax=[7, 7, 7], net_income=[26, 26, 26])
+    d = drivers.below_ebit(st)
+    assert d["hist_InterestExpense"].value == pytest.approx([-0.003] * 3)   # -(4 - 1), in $000
+    # EBIT 35, net interest 3 -> non-operating = 33 - (35 - 3) = 1, i.e. excluding interest income
+    assert d["hist_NonOpIncome"].value == pytest.approx([0.001] * 3)
+
+
+def test_unreported_interest_means_no_extra_forecast_interest():
+    """AAPL: no separate interest expense / income -> both stay inside non-operating
+    income; forecast debt and cash rates are 0 (WACC unaffected)."""
+    from lunoviq import market_inputs
+    st = _st(revenue=[100, 100, 100], total_debt=[50, 50, 50])
+    kd = DataPoint(0.055, "ratio", "t", "d")
+    fin = market_inputs.financing(st, kd, offline=True)
+    assert fin["fin_DebtRate"].value == 0.0 and fin["fin_CashRate"].value == 0.0
+    assert fin["fin_RevolverRate"].value == 0.055

@@ -227,3 +227,19 @@ Planned fix (drafted, not applied):
 - The report page still shows the v6 run.
 - Known simplifications: share buybacks are not modelled, so the forecast cash and current ratio drift upward; tax loss carryforwards use SEC's total, including state and foreign.
 - Web UI (Phase 10) and GitHub publishing come last.
+
+## 2026-09-25: Interest double count fixed (resumed session)
+
+- **Correction to the entry above.** The interrupted edit on 24 Sep had in fact been written to disk before the interruption, and it was included in commit 66a3560. It is not "not applied". It was untested at that point; it has now been tested.
+- **Fix: interest income** (for example KO).
+  - Historical net interest = interest expense − interest income (`hist_InterestExpense`, `01!B22:D22`).
+  - Non-operating income is calculated net of it.
+  - The forecast earns interest on cash at the 3-month Treasury bill rate.
+  - KO 2026E net income: 14.41 → 13.69 billion $. The roughly 0.7 billion $ double count is removed, and historical net income still equals the reported figures.
+- **Symmetric rule for interest expense** (for example AAPL since FY2024, where it is not reported separately):
+  - Interest expense stays inside non-operating income, and `fin_DebtRate` is set to 0.
+  - Without this, 5.5 billion $ of debt interest would have been counted twice.
+  - The same applies to interest income that isn't reported separately: `fin_CashRate` is set to 0.
+  - WACC is unaffected.
+- **Tests:** 50 passed (`RUN_EXCEL_TESTS=1`), including 2 new unit tests for these rules.
+- **12-company run:** 11 of 11 healthy, 0 Excel errors, 0 audit mismatches, historical ratios correct.

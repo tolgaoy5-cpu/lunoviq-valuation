@@ -99,7 +99,13 @@ def financing(st, kd, offline=False):
     interest = abs(st.value("interest_expense", y[-1]) or 0)
     debts = [d for d in ((st.value("total_debt", y[-2]) if len(y) > 1 else None), st.value("total_debt", y[-1])) if d]
     eff = interest / (sum(debts) / len(debts)) if (interest and debts) else None
-    if eff is not None and 0.005 <= eff <= 0.15:
+    if not interest:
+        # interest expense not reported separately (e.g. AAPL since FY2024): it is part of
+        # "other income, net", i.e. already inside the non-operating line carried forward
+        out["fin_DebtRate"] = DataPoint(0.0, "ratio", "policy", str(y[-1]),
+                                        "interest expense not reported separately: it stays inside non-operating "
+                                        "income, so no extra interest on debt (avoids double count); WACC unaffected", AUTO)
+    elif eff is not None and 0.005 <= eff <= 0.15:
         out["fin_DebtRate"] = DataPoint(round(eff, 4), "ratio", "SEC EDGAR companyfacts", str(y[-1]),
                                         "interest expense / average total debt (effective rate on existing debt)", AUTO)
     else:
