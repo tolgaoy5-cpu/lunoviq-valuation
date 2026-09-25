@@ -62,6 +62,10 @@ def friendly_error(exc):
     if isinstance(exc, LookupError) and "Ticker not found" in msg:
         return ("This ticker is not in the SEC list. Only US companies that file with the SEC are "
                 "supported.", msg, False)
+    from ..excel.recalc import RecalcTimeout
+    if isinstance(exc, RecalcTimeout):
+        return ("Excel did not respond. A dialog may be open in Excel (for example document recovery "
+                "or a file warning): close it, then try again.", msg, True)
     if "Yahoo" in msg or "finance.yahoo" in msg:
         return "The share price could not be fetched (Yahoo). Try again in a few minutes.", msg, True
     if "sec.gov" in msg:

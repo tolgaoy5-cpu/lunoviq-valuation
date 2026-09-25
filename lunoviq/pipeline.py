@@ -13,7 +13,7 @@ from pathlib import Path
 
 import openpyxl
 
-from . import config, drivers, market_inputs, peers as peer_sel, providers
+from . import config, drivers, market_inputs, peers as peer_sel, providers, units
 from .excel import presentation, writer
 from .providers import sec_xbrl
 from .schema import AUTO, OVERRIDE, TEMPLATE, DataPoint
@@ -69,6 +69,14 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     fundamentals = providers.get("fundamentals", facts_path=facts_path)
     st = fundamentals.financials(ticker, years, offline=offline)
     st_long = fundamentals.financials(ticker, config.get("pipeline.history_years", 5), offline=offline)
+    units.set_div(units.choose(st.latest("revenue")))
+    try:
+        return _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, market, with_peers, step)
+    finally:
+        units.set_div(units.DEFAULT)
+
+
+def _run(ticker, st, st_long, offline, recalc, sets, out_dir, model, template, market, with_peers, step):
     step("market")
     if market is None:
         market = market_inputs.build(st, providers.get("prices"), providers.get("risk_free"),
@@ -78,7 +86,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     # 3. historicals + history-based drivers (existing, tested writer) on a copy
     raw = st.raw
     sec_xbrl.write_model(str(template), str(model), st.company, st.cik,
-                         raw["series"], raw["used"], raw["years"])
+                         raw["series"], raw["used"], raw["years"], div=units.DIV)
 
     # 4. market inputs, review flags and overrides through named ranges
     wb = openpyxl.load_workbook(model)
@@ -106,6 +114,8 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     presentation.clear_precedents(wb)
     presentation.hide_unit_economics(wb)
     presentation.tidy(wb)
+    presentation.relabel_units(wb)
+    presentation.compact_style(wb)
     log.append(("comps_peers", DataPoint(", ".join(p["ticker"] for p in peer_list) or None, "", peer_src,
                                          dt.date.today().isoformat(),
                                          "EV/EBITDA: " + ", ".join("%s %.1fx" % (p["ticker"], p["ev"] / p["ebitda"])
@@ -121,6 +131,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
 
     # 5-6. recalculation and validation
     result = {"ticker": ticker, "company": st.company, "model": str(model), "outputs": None,
+              "units": units.label(), "unit_div": units.DIV,
               "missing_items": st.missing()}
     if recalc if recalc is not None else config.get("pipeline.recalculate", True):
         from .excel.recalc import recalc as excel_recalc

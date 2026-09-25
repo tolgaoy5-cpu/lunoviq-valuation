@@ -8,7 +8,7 @@ growth stays at the template's standard 2.5% and is flagged for review.
 """
 import statistics
 
-from . import config
+from . import config, units
 from .schema import AUTO, MISSING, DataPoint
 
 
@@ -122,9 +122,9 @@ def financing(st, kd, offline=False):
                                         "interest income not reported separately: it stays inside non-operating "
                                         "income, so no extra interest on cash (avoids double count)", AUTO)
     out["fin_RevolverRate"] = DataPoint(kd.value, "ratio", kd.source, kd.as_of, "revolver priced at pre-tax cost of debt", AUTO)
-    out["fin_MinCash"] = DataPoint(round(rev * 0.02 / 1000, 1), "USD 000s", "derived", str(y[-1]),
+    out["fin_MinCash"] = DataPoint(round(units.scale(rev * 0.02), 1), units.label(), "derived", str(y[-1]),
                                    "2% of latest revenue (operating cash)", AUTO)
-    out["fin_MaxRevolver"] = DataPoint(round(rev * 0.10 / 1000, 1), "USD 000s", "derived", str(y[-1]),
+    out["fin_MaxRevolver"] = DataPoint(round(units.scale(rev * 0.10), 1), units.label(), "derived", str(y[-1]),
                                        "10% of latest revenue", AUTO)
     return out
 

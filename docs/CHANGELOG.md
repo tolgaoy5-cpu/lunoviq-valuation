@@ -288,3 +288,19 @@ Requested by the user.
   - Verified: launched from its icon, the app built a full PEP model through Excel.
 - **Quit.** There is a "Quit" link in the top bar with a double-click confirmation, and a warning while a model is being built. It calls the new `POST /api/quit` endpoint.
 - **Tests:** 57 passed (fast suite), including a new quit test.
+
+## 2026-09-25: CFI-style compact numbers; Excel recalculation hardening
+
+Requested by the user after comparing our sheets with the CFI model.
+
+- **Display unit per company** (`lunoviq/units.py`).
+  - Revenue ≥ $1bn → USD millions, otherwise USD thousands (KO revenue now shows 50,300, not 50,299,697).
+  - Every amount and the share count use the same divisor, so per-share values, WACC and the audit are unchanged. A new Excel test builds KO in both units and compares the valuations.
+  - Labels ("USD thousands", "$000", "000s") switch automatically. The web UI reads `unit_div` from summary.json.
+- **Compact style** (`presentation.compact_style`): Arial Narrow 9 body, 11 for headers, row height 12.75. DCF headers are right-aligned over their numbers.
+- **Excel recalculation hardening** (`lunoviq/excel/recalc.py`).
+  - Root cause of the intermittent hangs: Excel for Mac is sandboxed. Opening a file outside its container can raise a "Grant File Access" prompt, and a hidden instance never shows it, so Excel waited forever. Confirmed by testing: the same file hung from the project folder but recalculated in 12 s from Excel's container.
+    - **Fix:** recalculate a copy in `~/Library/Containers/com.microsoft.Excel/Data/Lunoviq/`, then copy it back.
+  - **Time limit.** Excel is driven from a child process with a 180 s limit. On timeout, the child and its hidden Excel are stopped and `RecalcTimeout` is raised. The web UI shows it as "Excel did not respond…" (retryable).
+    - Before this, a pending Apple event in a thread relaunched Excel after it was killed, which left hidden orphan instances behind.
+  - The user's own Excel is never touched.

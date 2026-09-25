@@ -4,6 +4,7 @@ the trading-comparables peer table, the precedent-transaction block, and
 hiding the unit-economics schedules that the Growth-Margin engine ignores.
 Every write targets a constant cell; formula cells are refused.
 """
+from .. import units
 from .writer import FormulaProtectedError
 
 COMP = "06_Comparable_Valuation"
@@ -26,9 +27,9 @@ def _put(ws, ref, value):
 
 
 def write_peers(wb, peers):
-    """Peer table in USD thousands: name, EV, revenue, EBITDA, net income, market cap."""
+    """Peer table in the model unit: name, EV, revenue, EBITDA, net income, market cap."""
     ws = wb[COMP]
-    k = lambda v: None if v is None else v / 1000
+    k = units.scale
     for i, r in enumerate(PEER_ROWS):
         p = peers[i] if i < len(peers) else None
         vals = {"A": None, "B": None, "C": None, "D": None, "E": None, "I": None, "J": None, "K": None}
@@ -43,6 +44,7 @@ def write_peers(wb, peers):
 
 def tidy(wb):
     """Readability fixes on the generated copy (never on the template)."""
+    from copy import copy
     comp = wb[COMP]
     comp.column_dimensions["J"].width = 60           # peer rationale
     comp.column_dimensions["K"].width = 16           # market cap
@@ -59,7 +61,7 @@ def tidy(wb):
         cell = wb[sheet][ref]
         if isinstance(cell.value, str) and marker in cell.value:
             cell.value = text
-    # whole-number display: amounts are in USD thousands and periods are counts, so the
+    # whole-number display: amounts are in USD thousands/millions and periods are counts, so the
     # template's one-decimal formats carry no information; share prices, %, x keep decimals
     whole = {"#,##0.0;[Red](#,##0.0);-": "#,##0;[Red](#,##0);-",
              "#,##0.0;[Red]\\(#,##0.0\\);\\-": "#,##0;[Red]\\(#,##0\\);\\-", "0.0": "0"}
@@ -68,11 +70,23 @@ def tidy(wb):
             for c in row:
                 if c.number_format in whole:
                     c.number_format = whole[c.number_format]
+    # DCF: year headers were left-aligned over right-aligned numbers, so each figure
+    # appeared to sit under the next year; widen the bridge label column
+    from openpyxl.styles import Alignment
+    dcf = wb["04_DCF_Valuation"]
+    for ref in ("B6", "C6", "D6", "E6", "F6", "G6", "B23", "C23", "D23", "E23", "F23"):
+        c = dcf[ref]
+        if isinstance(c.value, str):
+            al = copy(c.alignment)
+            al.horizontal = "right"
+            c.alignment = al
+    dcf.column_dimensions["D"].width = max(dcf.column_dimensions["D"].width or 10, 24)
     # unit note under each sheet title that lacks one
     from openpyxl.styles import Font
-    notes = {"04_DCF_Valuation": "All figures in USD thousands unless stated; per-share values in USD",
-             "05_Sensitivity": "Per-share values in USD; enterprise values in USD thousands",
-             "06_Comparable_Valuation": "All figures in USD thousands unless stated; per-share values in USD; multiples in x"}
+    unit = units.label()
+    notes = {"04_DCF_Valuation": "All figures in %s unless stated; per-share values in USD" % unit,
+             "05_Sensitivity": "Per-share values in USD; enterprise values in %s" % unit,
+             "06_Comparable_Valuation": "All figures in %s unless stated; per-share values in USD; multiples in x" % unit}
     for sheet, text in notes.items():
         ws = wb[sheet]
         if ws["A2"].value is None:
@@ -143,3 +157,44 @@ def write_benchmarks(wb, ticker, peers):
             _put(ws, "F%d" % r, None)
         filled += bool(vals)
     return filled
+
+
+def relabel_units(wb):
+    """Template labels say USD thousands / $000 / 000s; switch them when the model runs in millions."""
+    if units.DIV == 1e3:
+        return 0
+    n = 0
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for c in row:
+                v = c.value
+                if not isinstance(v, str):
+                    continue
+                new = v.replace("USD thousands", units.label())
+                if new.strip() == "$000":
+                    new = units.short()
+                elif new.strip() == "000s":
+                    new = units.shares_label()
+                if new != v:
+                    c.value = new
+                    n += 1
+    return n
+
+
+def compact_style(wb):
+    """Denser, analyst-style look: body text in Arial Narrow 9 (as in CFI / Macabacus
+    models), headings one step larger, tighter default row height."""
+    from copy import copy
+    body = {("Arial", 10.0), ("Carlito", 11.0), ("Arial", 9.0)}
+    heads = {("Arial", 12.0), ("Carlito", 12.0)}
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for c in row:
+                key = (c.font.name, c.font.sz)
+                if key in body or key in heads:
+                    f = copy(c.font)
+                    f.name = "Arial Narrow"
+                    f.sz = 9.0 if key in body else 11.0
+                    c.font = f
+        ws.sheet_format.defaultRowHeight = 12.75
+        ws.sheet_format.customHeight = True

@@ -162,3 +162,6 @@ See `docs/CHANGELOG.md` for every change and its reasoning.
   assumptions, flagged in `09_Sources` and in the app.
 - There is no free source for precedent transactions, so that method shows as n/a.
 - Share buybacks are not modelled, so forecast cash builds up.
+- Recalculation needs Microsoft Excel for Mac (via xlwings). Workbooks are
+  recalculated on a copy inside Excel's sandbox folder; if Excel stops responding
+  (for example because a dialog is open), the run stops after 180 s with a clear message.

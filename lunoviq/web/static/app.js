@@ -6,7 +6,8 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const nf = (d) => new Intl.NumberFormat("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const isNum = (v) => typeof v === "number" && isFinite(v);
 const money = (v) => (isNum(v) ? (v < 0 ? "−$" : "$") + nf(2).format(Math.abs(v)) : "—");
-const bn = (v) => (isNum(v) ? (v < 0 ? "−$" : "$") + nf(1).format(Math.abs(v) / 1e6) + "B" : "—");          // model units: USD thousands
+let unitDiv = 1e3;                               // model unit of the run shown (USD thousands or millions)
+const bn = (v) => (isNum(v) ? (v < 0 ? "−$" : "$") + nf(1).format(Math.abs(v) * unitDiv / 1e9) + "B" : "—");
 const pct = (v, d = 1) => (isNum(v) ? nf(d).format(v * 100) + "%" : "—");
 const mult = (v) => (isNum(v) ? nf(1).format(v) + "x" : "—");
 const signed = (v) => (isNum(v) ? (v >= 0 ? "+" : "−") + nf(1).format(Math.abs(v * 100)) + "%" : "—");
@@ -300,7 +301,7 @@ function bridge(d) {
     const w = (Math.abs(v) / max) * 100;
     s += `<div class="br"><span>${lab}</span><span class="track"><span class="seg ${k === "t" ? "tot" : v < 0 ? "neg" : ""}" style="left:0;width:${w}%"></span></span><span class="v">${bn(v)}</span></div>`;
   });
-  s += `<div class="br"><span><b>÷ ${nf(0).format(d.shares / 1000)}M diluted shares</b></span><span></span><span class="v"><b>${money(d.methods[0].value)}</b></span></div></div>`;
+  s += `<div class="br"><span><b>÷ ${nf(0).format(d.shares * unitDiv / 1e6)}M diluted shares</b></span><span></span><span class="v"><b>${money(d.methods[0].value)}</b></span></div></div>`;
   const tshare = isNum(b.pv_terminal) && isNum(b.ev) ? b.pv_terminal / b.ev : null;
   return s + `<p class="axis-note">${pct(tshare, 0)} of enterprise value comes from after 2030${tshare > 0.75 ? " — the value is highly sensitive to terminal growth and WACC." : "."}</p>`;
 }
@@ -331,7 +332,7 @@ function reviewItems(d) {
   if (d.inputs.fin_DebtRate && d.inputs.fin_DebtRate.value === 0) out.push(["info", "Interest expense is not reported separately; it sits in other income historically and stays there in the forecast."]);
   const miss = (d.missing_items || []).filter((k) => !IGNORE_MISSING.includes(k)).map((k) => ITEM_LABEL[k] || k);
   if (miss.length) out.push(["info", `Not reported separately in SEC data: ${esc(miss.join(", "))} (included in the model's "other" lines).`]);
-  out.push(["info", "Excel figures are in <b>USD thousands</b> (50,299,697 = $50.3B)."]);
+  out.push(["info", unitDiv === 1e6 ? "Excel figures are in <b>USD millions</b> (50,300 = $50.3B)." : "Excel figures are in <b>USD thousands</b> (50,300 = $50.3M)."]);
   return out.map(([c, t]) => `<li class="${c}"><span>${t}</span></li>`).join("");
 }
 
@@ -351,6 +352,7 @@ window.addEventListener("resize", () => {
 
 function renderResult(d, keepScroll = false) {
   lastResult = d;
+  unitDiv = d.unit_div || 1e3;
   show("view-result");
   document.title = `${d.ticker} · Lunoviq`;
   const m = Object.fromEntries(d.methods.map((x) => [x.key, x]));

@@ -16,7 +16,7 @@ Standard mechanical defaults, not forecasts of the analyst's view:
                      reconciles to the reported figure in every historical year)
     debt             held flat (no scheduled repayment or new borrowing)
 """
-from . import config
+from . import config, units
 from .schema import AUTO, DataPoint
 
 SRC = "SEC EDGAR companyfacts"
@@ -84,9 +84,9 @@ def asset_life(st):
 
 
 def tax_basis(st):
-    vals = [None if st.value("ppe_net", y) is None else st.value("ppe_net", y) / 1000
+    vals = [None if st.value("ppe_net", y) is None else units.scale(st.value("ppe_net", y))
             for y in st.fiscal_years]
-    return _dp(vals, "USD 000s", st, "set equal to book net PP&E (no opening timing difference)")
+    return _dp(vals, units.label(), st, "set equal to book net PP&E (no opening timing difference)")
 
 
 def payout(st):
@@ -109,7 +109,7 @@ def below_ebit(st):
         tax      = -current tax + deferred tax             (= -reported total tax)
         minority = reported NI - (EBT + tax)               (NCI and anything else)
     """
-    k = lambda v: None if v is None else v / 1000
+    k = units.scale
     nonop, deferred, minority, pre_nci, net_int = [], [], [], [], []
     for y in st.fiscal_years:
         v = lambda key: st.value(key, y)
@@ -128,20 +128,20 @@ def below_ebit(st):
         nonop.append(k(n)); deferred.append(k(d)); minority.append(k(m)); pre_nci.append(ebt + tax)
         net_int.append(k(-interest))
     avg_nonop = sum(nonop) / len(nonop)
-    shares = [-m * 1000 / p for m, p in zip(minority, pre_nci) if p > 0]
+    shares = [-m * units.DIV / p for m, p in zip(minority, pre_nci) if p > 0]
     pct = _clamp(sum(shares) / len(shares), [0.0, 0.3]) if shares else 0.0
     fy = "FY%s-FY%s" % (st.fiscal_years[0], st.fiscal_years[-1])
     has_ii = any(st.value("interest_income", y) for y in st.fiscal_years)
     return {
-        "hist_InterestExpense": _dp(net_int, "USD 000s", st,
+        "hist_InterestExpense": _dp(net_int, units.label(), st,
                                     "net interest = -(interest expense - interest income), %s%s"
                                     % (fy, "" if has_ii else "; interest income not reported separately")),
-        "hist_NonOpIncome": _dp(nonop, "USD 000s", st,
+        "hist_NonOpIncome": _dp(nonop, units.label(), st,
                                 "reported pre-tax income - (EBIT - net interest), %s" % fy),
-        "hist_DeferredTax": _dp(deferred, "USD 000s", st, "-(reported total tax - current tax), %s" % fy),
-        "hist_MinorityShare": _dp(minority, "USD 000s", st,
+        "hist_DeferredTax": _dp(deferred, units.label(), st, "-(reported total tax - current tax), %s" % fy),
+        "hist_MinorityShare": _dp(minority, units.label(), st,
                                   "reported net income - (EBT + tax): minority interest & other, %s" % fy),
-        "drv_NonOpIncome": _dp([round(avg_nonop, 1)] * YEARS, "USD 000s", st,
+        "drv_NonOpIncome": _dp([round(avg_nonop, 1)] * YEARS, units.label(), st,
                                "average historical non-operating income, held flat - review"),
         "drv_MinorityPct": _dp([round(pct, 4)] * YEARS, "ratio", st,
                                "average minority share of pre-minority net income (bounded 0-30%)"),
@@ -176,13 +176,13 @@ def current_items(st):
     for y in st.fiscal_years:
         v = lambda k: st.value(k, y)
         ca, cl = v("current_assets"), v("current_liabilities")
-        oca.append(None if ca is None else (ca - sum(v(k) or 0 for k in ("cash", "receivables", "inventory"))) / 1000)
-        ocl.append(None if cl is None else (cl - (v("payables") or 0)) / 1000)
+        oca.append(None if ca is None else units.scale(ca - sum(v(k) or 0 for k in ("cash", "receivables", "inventory"))))
+        ocl.append(None if cl is None else units.scale(cl - (v("payables") or 0)))
     out = {}
     if any(x is not None for x in oca):
-        out["hist_OtherCurrentAssets"] = _dp(oca, "USD 000s", st, "AssetsCurrent - (cash + receivables + inventory)")
+        out["hist_OtherCurrentAssets"] = _dp(oca, units.label(), st, "AssetsCurrent - (cash + receivables + inventory)")
     if any(x is not None for x in ocl):
-        out["hist_OtherCurrentLiab"] = _dp(ocl, "USD 000s", st, "LiabilitiesCurrent - accounts payable")
+        out["hist_OtherCurrentLiab"] = _dp(ocl, units.label(), st, "LiabilitiesCurrent - accounts payable")
     return out
 
 
@@ -211,13 +211,13 @@ def build(st, terminal_growth, st_long=None):
                              ("val_MinorityInterest", "minority_interest", "non-controlling interest")):
         v = st.latest(key)
         method = st.items.get(key, {}).get(st.fiscal_years[-1])
-        out[name] = _dp(0.0 if v is None else v / 1000, "USD 000s", st,
+        out[name] = _dp(0.0 if v is None else units.scale(v), units.label(), st,
                         "%s, FY%s balance; %s" % (what, st.fiscal_years[-1],
                                                  method.method if method and v is not None else "not reported -> 0"))
     out.update(below_ebit(st) or {})
     out.update(current_items(st))
     out.update(scenario_deltas(lng))
     flat = "debt held flat - no scheduled repayment/borrowing (standard simplification)"
-    out["drv_DebtRepayment"] = DataPoint(0.0, "USD 000s", "policy", "", flat, AUTO)
-    out["drv_NewBorrowing"] = DataPoint(0.0, "USD 000s", "policy", "", flat, AUTO)
+    out["drv_DebtRepayment"] = DataPoint(0.0, units.label(), "policy", "", flat, AUTO)
+    out["drv_NewBorrowing"] = DataPoint(0.0, units.label(), "policy", "", flat, AUTO)
     return out

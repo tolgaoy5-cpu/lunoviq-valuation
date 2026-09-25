@@ -180,3 +180,35 @@ def test_pipeline_recalc_outputs(tmp_path):
     assert 0.03 < out["wacc"] < 0.10
     assert out["valuation"]["Current Price"] == pytest.approx(88.09)
     assert out["dcf_checks"]["ev_match"]                              # Python recompute == Excel
+
+
+# ---------------------------------------------------------------- display unit
+def test_unit_choice_and_labels():
+    from lunoviq import units
+    assert units.choose(47.9e9) == 1e6 and units.choose(300e6) == 1e3
+    units.set_div(1e6)
+    try:
+        assert units.scale(47_941_000_000) == 47_941 and units.label() == "USD millions" and units.short() == "$m"
+    finally:
+        units.set_div(units.DEFAULT)
+    assert units.label() == "USD thousands"
+
+
+@pytest.mark.excel
+def test_millions_and_thousands_give_identical_valuation(tmp_path, monkeypatch):
+    """Changing the display unit rescales every amount and the share count together,
+    so per-share values, WACC and the audit are unchanged."""
+    from lunoviq import units
+    runs = {}
+    for div in (1e3, 1e6):
+        monkeypatch.setattr(units, "choose", lambda rev, d=div: d)
+        runs[div] = pipeline.run("KO", facts_path=KO, recalc=True, out_root=tmp_path / str(int(div)),
+                                 market=_market(), with_peers=False)
+    a, b = runs[1e3]["outputs"], runs[1e6]["outputs"]
+    for k, v in a["valuation"].items():
+        if isinstance(v, float):
+            assert b["valuation"][k] == pytest.approx(v, rel=1e-9), k
+    assert b["wacc"] == pytest.approx(a["wacc"]) and runs[1e6]["audit"]["mismatches"] == 0
+    wb = openpyxl.load_workbook(runs[1e6]["model"])
+    assert wb["03_3_Statement_Model"]["A4"].value == "All figures in USD millions unless stated"
+    assert wb["01_Inputs_Historicals"]["B67"].value == "m"

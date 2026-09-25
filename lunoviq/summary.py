@@ -60,7 +60,8 @@ def build(model_path, run_json=None):
               or "review" in (v.get("method") or "")]
     return {
         "ticker": rec.get("ticker"), "company": rec.get("company"), "generated": rec.get("generated"),
-        "model": str(model_path), "units": "USD thousands",
+        "model": str(model_path), "units": rec.get("units", "USD thousands"),
+        "unit_div": rec.get("unit_div", 1e3),
         "price": _num(dash["B41"].value), "shares": _num(dcf["H29"].value),
         "selected": _num(dash["B42"].value), "scenario": dash["B8"].value,
         "years": years, "financials": fin,

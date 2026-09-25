@@ -449,14 +449,14 @@ def build_feed(facts, n_years=3):
     return series, used, years
 
 
-def to_thousands(item, val):
+def to_thousands(item, val, div=1000.0):
     if val is None:
         return None
-    return val if item == "Shares Outstanding" else val / 1000.0
+    return val if item == "Shares Outstanding" else val / div
 
 
 # ---------------------------------------------------------------- Excel yazimi
-def write_model(path_in, path_out, company, cik, series, used, years):
+def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0):
     import openpyxl
     wb = openpyxl.load_workbook(path_in)
     fd = wb["08_Data_Feed"]
@@ -473,14 +473,14 @@ def write_model(path_in, path_out, company, cik, series, used, years):
         if not r:
             continue
         for i, y in enumerate(years):
-            fd.cell(row=r, column=3 + i).value = to_thousands(item, series[item].get(y))
+            fd.cell(row=r, column=3 + i).value = to_thousands(item, series[item].get(y), div)
         fd.cell(row=r, column=6).value = used.get(item, "")
 
     # --- 01_Inputs tarihsel blogunu besle (isaret kurallariyla)
     inp = wb["01_Inputs_Historicals"]
     def put(row, item, sign=1, keep_sign=False):
         for i, y in enumerate(years):
-            v = to_thousands(item, series[item].get(y))
+            v = to_thousands(item, series[item].get(y), div)
             if v is not None and sign < 0:
                 v = sign * v if keep_sign else sign * abs(v)
             inp.cell(row=row, column=2 + i).value = v
@@ -504,7 +504,7 @@ def write_model(path_in, path_out, company, cik, series, used, years):
     # hisse sayisi (bin adet) ve Growth-Margin surucileri
     sh = series["Shares Outstanding"].get(years[-1])
     if sh:
-        inp["C67"] = sh / 1000.0
+        inp["C67"] = sh / div
     # ---- Tahmin surucilerini gecmisten turet ---------------------------------
     # Yalnizca buyume ve COGS marjini degil, FAALIYET GIDERI oranlarini da
     # gecmisten al. Aksi halde tahmin yillari sablonun demo varsayimlariyla
@@ -535,7 +535,7 @@ def write_model(path_in, path_out, company, cik, series, used, years):
     # beslenir ve EBITDA marji sacmalar.
     op = wb["02_Operating_Model"]
     for i, y in enumerate(years):
-        cogs = to_thousands("Cost of Goods Sold", series["Cost of Goods Sold"].get(y))
+        cogs = to_thousands("Cost of Goods Sold", series["Cost of Goods Sold"].get(y), div)
         if cogs is not None:
             col = 2 + i                                    # B, C, D
             op.cell(row=78, column=col).value = cogs       # Total COGS (tarihsel)
