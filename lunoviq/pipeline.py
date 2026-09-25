@@ -48,9 +48,14 @@ def load_overrides(ticker, cli_sets=()):
                          dt.date.today().isoformat(), "manual", OVERRIDE) for k, v in vals.items()}
 
 
+STEPS = ["fundamentals", "market", "excel", "peers", "recalc", "audit"]
+
+
 def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=None, market=None,
-        with_peers=True):
-    """Execute the pipeline. `market` lets tests inject market inputs."""
+        with_peers=True, progress=None):
+    """Execute the pipeline. `market` lets tests inject market inputs; `progress(step)`
+    is called as each stage starts (used by the web UI)."""
+    step = progress or (lambda name: None)
     ticker = ticker.upper()
     years = config.get("pipeline.years", 3)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
@@ -60,13 +65,16 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     template = _path("paths.template", "Lunoviq_Master_Financial_Model_v7.xlsx")
 
     # 1-2. data -> schema
+    step("fundamentals")
     fundamentals = providers.get("fundamentals", facts_path=facts_path)
     st = fundamentals.financials(ticker, years, offline=offline)
     st_long = fundamentals.financials(ticker, config.get("pipeline.history_years", 5), offline=offline)
+    step("market")
     if market is None:
         market = market_inputs.build(st, providers.get("prices"), providers.get("risk_free"),
                                      providers.get("equity_risk_premium"), offline=offline)
 
+    step("excel")
     # 3. historicals + history-based drivers (existing, tested writer) on a copy
     raw = st.raw
     sec_xbrl.write_model(str(template), str(model), st.company, st.cik,
@@ -90,6 +98,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     # comparables, precedent transactions, unit-economics rows
     peer_list, skipped, peer_src = ([], [], "not run")
     if with_peers:
+        step("peers")
         peer_list, skipped, peer_src = peer_sel.select(ticker, st.latest("revenue"), st.fiscal_years[-1],
                                                        offline=offline)
         presentation.write_peers(wb, peer_list)
@@ -116,6 +125,7 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
     if recalc if recalc is not None else config.get("pipeline.recalculate", True):
         from .excel.recalc import recalc as excel_recalc
         from .excel.reader import outputs
+        step("recalc")
         excel_recalc(model)
         result["outputs"] = outputs(model)
 
@@ -127,6 +137,17 @@ def run(ticker, facts_path=None, offline=False, recalc=None, sets=(), out_root=N
                   template=str(template),
                   inputs={k: v.to_dict() for k, v in inputs.items()},
                   statements=st.to_dict())
-    (out_dir / "run.json").write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
-    result["run_json"] = str(out_dir / "run.json")
+    run_json = out_dir / "run.json"
+    run_json.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+    result["run_json"] = str(run_json)
+    if result["outputs"]:
+        step("audit")
+        from . import audit as audit_mod, summary
+        a = audit_mod.audit(model, run_json)
+        record["audit"] = result["audit"] = {
+            "lines_checked": a["lines_checked"], "mismatches": len(a["mismatches"]),
+            "balance_sheet_balances": a["python_balance_sheet_balances"],
+            "historical_ratio_issues": a["historical_ratio_issues"]}
+        run_json.write_text(json.dumps(record, indent=2, default=str), encoding="utf-8")
+        result["summary"] = str(summary.write(model, run_json)[0])
     return result

@@ -243,3 +243,31 @@ Planned fix (drafted, not applied):
   - WACC is unaffected.
 - **Tests:** 50 passed (`RUN_EXCEL_TESTS=1`), including 2 new unit tests for these rules.
 - **12-company run:** 11 of 11 healthy, 0 Excel errors, 0 audit mismatches, historical ratios correct.
+
+## 2026-09-25: Phase 10, web app
+
+- **Server** (`lunoviq/web/server.py`, standard library only, `python -m lunoviq serve`):
+  - Binds to localhost only.
+  - Runs one model build at a time on a worker thread, since Excel recalculates one workbook at a time. The browser polls the job's progress step by step.
+  - Endpoints: ticker/company search (SEC list), start a run with validated overrides (revenue growth, terminal growth, exit multiple), run history, run summary, Excel download, and opening the model in Excel.
+  - Error messages are in Turkish, and "retry" is offered only where retrying can help.
+  - Path traversal is blocked (run IDs are regex-checked; static files are resolved inside `static/`).
+  - `index.html` references its CSS/JS with a version suffix, so browsers never show an outdated interface after a change.
+- **Pipeline:** new `progress` callback. The audit now runs inside the pipeline, and `lunoviq/summary.py` writes `summary.json` (the UI's data, read from the recalculated workbook).
+- **UI** (`lunoviq/web/static`, vanilla JS/CSS, no build step):
+  - Results show the valuation range (football field), a plain-language readout with reverse DCF, the WACC build-up, the EV→equity bridge, a financials chart and table, a sensitivity heatmap, peers and benchmarks, the assumption editor, checks and audit, "review before presenting" items, and every input's source.
+  - Turkish; light and dark themes; responsive (charts are redrawn at their displayed width); keyboard-accessible autocomplete.
+- **QA:**
+  - Tested in the browser: desktop light and dark, and phone width (375px, no horizontal overflow).
+  - Tested end to end: search by name ("monster" → MNST), progress, results, assumption override (6% growth, audit 190/190), XOM data error, unknown ticker, and client- and server-side validation.
+  - Defects found in QA and fixed:
+    - the logger crashed on 404s,
+    - the topbar's blur caused rendering glitches,
+    - the chart label overlapped an axis value, and chart text was oversized,
+    - some UI text was in English,
+    - stale cached JS was served,
+    - the growth override was displayed incorrectly,
+    - the page title didn't update,
+    - "retry" was shown for errors that can't be retried.
+- **Launcher:** `Lunoviq.command` now starts the web app, or just opens the browser if the app is already running.
+- **Tests:** 63 passed (`RUN_EXCEL_TESTS=1`), including 13 new web API tests with a stubbed pipeline.

@@ -36,3 +36,7 @@ def test_forecast_audit_ko_matches_excel(tmp_path):
     assert a["mismatches"] == [] and a["python_balance_sheet_balances"]
     assert a["historical_ratio_issues"] == []
     assert res["outputs"]["errors"] == []
+    import json
+    summary = json.load(open(res["summary"]))                 # data behind the web UI
+    assert summary["audit"]["mismatches"] == 0 and len(summary["years"]) == 8
+    assert all(m["key"] for m in summary["methods"]) and summary["grid"]["price"][0][0] is not None

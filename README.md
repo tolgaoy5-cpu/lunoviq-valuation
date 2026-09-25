@@ -19,6 +19,29 @@ The Excel model contains a 3-statement model, DCF (perpetuity and exit
 multiple), sensitivity tables, trading and transaction comparables, scenarios
 (Bear/Base/Bull) and a management dashboard with built-in model-health checks.
 
+## Web app
+
+```bash
+python -m lunoviq serve        # or double-click Lunoviq.command (macOS)
+```
+
+The app opens at `http://127.0.0.1:8765`. It runs locally only and uses the Python standard library, so nothing extra needs installing. It provides:
+- Company search by ticker or name.
+- Live progress while the model is built.
+- A results dashboard:
+  - value range across the three methods compared with the market price, plus a reverse DCF,
+  - how the WACC is built,
+  - the enterprise-to-equity bridge,
+  - financials chart,
+  - WACC × growth sensitivity heatmap,
+  - peers and benchmarks,
+  - checks and the independent audit,
+  - every input's source.
+- Editing the key assumptions (revenue growth, terminal growth, exit multiple) and rebuilding.
+- Downloading the Excel model, or opening it in Excel.
+
+The interface is in Turkish, with light and dark themes and a phone layout.
+
 ## What each run produces
 
 `output/<TICKER>_<timestamp>/`
@@ -94,6 +117,9 @@ lunoviq/                 package
   market_inputs.py       cost-of-capital inputs from market data
   excel/                 writer (named ranges, audit log), recalc (Excel), reader
   pipeline.py            end-to-end orchestration
+  audit.py               independent Python re-computation of the forecast vs Excel
+  summary.py             run summary for the UI
+  web/                   local web app (server.py + static/)
 config/                  lunoviq.example.toml (committed), lunoviq.toml (local)
 tools/                   workbook inspector/differ, master-template builder
 tests/                   pytest suite

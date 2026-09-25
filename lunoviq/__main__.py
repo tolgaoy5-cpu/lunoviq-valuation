@@ -28,7 +28,14 @@ def main(argv=None):
     r.add_argument("--open", action="store_true", help="open the finished model in Excel (macOS)")
     r.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
                    help="override a named-range input, e.g. val_Beta=0.6")
+    sv = sub.add_parser("serve", help="start the local web app")
+    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--no-browser", action="store_true")
     a = ap.parse_args(argv)
+    if a.cmd == "serve":
+        from .web.server import serve
+        serve(a.port, not a.no_browser)
+        return 0
 
     res = pipeline.run(a.ticker, facts_path=a.facts, offline=a.offline,
                        recalc=False if a.no_recalc else None, sets=a.set)
