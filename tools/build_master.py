@@ -17,7 +17,7 @@ The Dashboard formulas are read from the _Fixed file rather than hardcoded, so
 the source of every changed cell can be traced.
 
 Usage:
-    python tools/build_master.py [--out Lunoviq_Master_Financial_Model_v2.xlsx]
+    python tools/build_master.py [--out templates/Lunoviq_Master_Financial_Model_v2.xlsx]
 """
 import argparse
 import html
@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from xlsx_inspect import cells  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-BASE = ROOT / "Lunoviq_Master_Financial_Model.xlsx"
+BASE = ROOT / "templates" / "Lunoviq_Master_Financial_Model.xlsx"
 FIXED = ROOT / "Financial_Analysis_and_Valuation_Fixed.xlsx"
 
 DASH_CELLS = [c + str(r) for r in range(37, 41) for c in "IJKL"] + ["I56"]
@@ -121,7 +121,7 @@ def build(out):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "Lunoviq_Master_Financial_Model_v2.xlsx"))
+    ap.add_argument("--out", default=str(ROOT / "templates" / "Lunoviq_Master_Financial_Model_v2.xlsx"))
     a = ap.parse_args()
     if Path(a.out).resolve() in (BASE.resolve(), FIXED.resolve()):
         raise SystemExit("refusing to overwrite a parent workbook")

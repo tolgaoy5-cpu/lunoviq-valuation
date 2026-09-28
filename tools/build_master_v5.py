@@ -23,7 +23,7 @@ The DCF is unaffected: free cash flow starts from EBITDA, and the investments
 behind non-operating income are valued in the equity bridge (v4).
 
 Usage:
-    python tools/build_master_v5.py [--out Lunoviq_Master_Financial_Model_v5.xlsx]
+    python tools/build_master_v5.py [--out templates/Lunoviq_Master_Financial_Model_v5.xlsx]
 """
 import argparse
 import html
@@ -36,7 +36,7 @@ from build_master import sheet_part  # noqa: E402
 from build_master_v4 import set_cell  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "Lunoviq_Master_Financial_Model_v4.xlsx"
+SRC = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v4.xlsx"
 INP, IS = "01_Inputs_Historicals", "03_3_Statement_Model"
 I = "'01_Inputs_Historicals'"
 HIST, FC = "BCD", "EFGHI"            # 03 columns: 2023A-2025A, 2026E-2030E
@@ -107,7 +107,7 @@ def build(out, src=SRC):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "Lunoviq_Master_Financial_Model_v5.xlsx"))
+    ap.add_argument("--out", default=str(ROOT / "templates" / "Lunoviq_Master_Financial_Model_v5.xlsx"))
     a = ap.parse_args()
     if Path(a.out).resolve() == SRC.resolve():
         raise SystemExit("refusing to overwrite v4")

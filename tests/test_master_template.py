@@ -8,17 +8,23 @@ from conftest import ROOT
 from xlsx_inspect import cells, defined_names, diff
 import build_master
 
-V1 = ROOT / "Lunoviq_Master_Financial_Model.xlsx"
-V2 = ROOT / "Lunoviq_Master_Financial_Model_v2.xlsx"
+V1 = ROOT / "templates" / "Lunoviq_Master_Financial_Model.xlsx"
+V2 = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v2.xlsx"
 FIXED = ROOT / "Financial_Analysis_and_Valuation_Fixed.xlsx"
 BASE = ROOT / "Financial Analysis and Valuation.xlsx"
+
+# v2 was built from the original source workbooks, which are kept locally and not
+# published; the provenance tests run only where those files exist.
+needs_originals = pytest.mark.skipif(not (FIXED.exists() and BASE.exists()),
+                                     reason="original source workbooks not present")
 
 
 @pytest.fixture(scope="module")
 def books():
-    return {k: cells(p) for k, p in dict(v1=V1, v2=V2, fixed=FIXED, base=BASE).items()}
+    return {k: cells(p) for k, p in dict(v1=V1, v2=V2, fixed=FIXED, base=BASE).items() if p.exists()}
 
 
+@needs_originals
 def test_build_is_reproducible(tmp_path):
     out = tmp_path / "v2.xlsx"
     build_master.build(str(out))
@@ -33,6 +39,7 @@ def test_v2_differs_from_v1_only_where_intended(books):
     assert not any(v for s, v in changed.items() if s not in ("00_Dashboard", "07_Analysis_Scenarios"))
 
 
+@needs_originals
 def test_v2_is_union_of_both_parents(books):
     """Every cell differing from the base comes from exactly one parent, unchanged."""
     b, v1, fx, v2 = books["base"], books["v1"], books["fixed"], books["v2"]
@@ -60,6 +67,7 @@ def test_workbook_xml_schema_order():
     assert wb.index("<x:definedNames>") < wb.index("<x:calcPr")
 
 
+@needs_originals
 @pytest.mark.excel
 def test_excel_recalc_matches_reference(tmp_path, books):
     """Recalculated demo v2 must reproduce the Excel/WPS values of the _Fixed model."""

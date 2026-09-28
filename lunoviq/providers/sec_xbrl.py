@@ -1,17 +1,17 @@
 """
-Lunoviq — SEC EDGAR veri besleyici
-----------------------------------
-Ticker veya CIK verilir; SEC companyfacts API'sinden son 3 mali yil cekilir,
-08_Data_Feed sayfasina yazilir ve 01_Inputs tarihsel blogu doldurulur.
+Lunoviq — SEC EDGAR data feed
+-----------------------------
+Given a ticker or CIK, fetches the last fiscal years from the SEC companyfacts
+API, maps XBRL tags to the model's line items, writes 08_Data_Feed and fills
+the historical block of 01_Inputs.
 
-(Paket ici konum: lunoviq/providers/sec_xbrl.py — kok dizindeki edgar_feed.py
-geriye uyumluluk icin bunu yeniden disa aktarir.)
+(tools/edgar_feed.py re-exports this module as a standalone CLI.)
 
-Kullanim:
-    python edgar_feed.py AAPL  --model Lunoviq_Master_Financial_Model_v2.xlsx
-    python edgar_feed.py 0000320193 --out Apple_Model.xlsx
+Usage:
+    python tools/edgar_feed.py AAPL  --model templates/Lunoviq_Master_Financial_Model_v2.xlsx
+    python tools/edgar_feed.py 0000320193 --out Apple_Model.xlsx
 
-Not: SEC kullanim politikasi User-Agent zorunlu kilar ve saniyede 10 istek siniri koyar.
+Note: SEC's fair-access policy requires a User-Agent and allows at most 10 requests per second.
 """
 import json, re, sys, time, argparse, datetime as dt
 from pathlib import Path
@@ -19,8 +19,8 @@ from pathlib import Path
 BASE = "https://data.sec.gov"
 TICKERS = "https://www.sec.gov/files/company_tickers.json"
 
-# ---------------------------------------------------------------- eşleme sözlüğü
-# Her kalem icin oncelik sirali XBRL etiketleri. Ilk bulunan kullanilir.
+# ---------------------------------------------------------------- tag mapping
+# Priority-ordered XBRL tags per line item; per year, the first tag found is used.
 TAGS = {
     "Revenue": ["RevenueFromContractWithCustomerExcludingAssessedTax",
                 "RevenueFromContractWithCustomerIncludingAssessedTax",
@@ -28,9 +28,9 @@ TAGS = {
     "Cost of Goods Sold": ["CostOfGoodsAndServicesSold", "CostOfRevenue", "CostOfGoodsSold"],
     "SG&A": ["SellingGeneralAndAdministrativeExpense",
              "GeneralAndAdministrativeExpense",
-             # Son care: SG&A'yi ayri raporlamayan sirketler (orn. MNST) toplam
-             # faaliyet giderini verir. Ar-Ge'si olan sirketlerde SG&A etiketi zaten
-             # bulundugu icin buraya dusulmez.
+             # Last resort: companies that do not report SG&A separately (e.g. MNST)
+             # report total operating expenses. Companies with R&D also report an
+             # SG&A tag, so they never fall through to this one.
              "OperatingExpenses"],
     "Other Operating Expense": ["OtherCostAndExpenseOperating",
                                 "OtherOperatingIncomeExpenseNet",
@@ -39,15 +39,15 @@ TAGS = {
                                     "DepreciationAmortizationAndAccretionNet",
                                     "DepreciationAndAmortization", "Depreciation"],
     "Interest Expense": ["InterestExpense", "InterestExpenseDebt",
-                         "InterestExpenseNonoperating",          # 2024+ taksonomi (orn. AMZN)
+                         "InterestExpenseNonoperating",          # 2024+ taxonomy (e.g. AMZN)
                          "InterestIncomeExpenseNet"],
     "Net Income": ["NetIncomeLoss", "ProfitLoss"],
     "Accounts Receivable": ["AccountsReceivableNetCurrent", "ReceivablesNetCurrent",
-                            "AccountsNotesAndLoansReceivableNetCurrent"],   # orn. PEP
+                            "AccountsNotesAndLoansReceivableNetCurrent"],   # e.g. PEP
     "Inventory": ["InventoryNet", "InventoryFinishedGoods"],
     "PP&E (net)": ["PropertyPlantAndEquipmentNet"],
-    # Isletme sermayesi (DPO) icin SAF ticari borc gerekir. AP+tahakkuk eden
-    # giderler karisik bir kalemdir ve DPO'yu sisirir -> en son care.
+    # Working capital (DPO) needs pure trade payables. "AP and accrued liabilities"
+    # is a mixed line that inflates DPO -> last resort.
     "Accounts Payable": ["AccountsPayableCurrent",
                          "AccountsPayableTradeCurrent",
                          "AccountsPayableAndAccruedLiabilitiesCurrent"],
@@ -56,16 +56,16 @@ TAGS = {
                                "DeferredIncomeTaxesAndOtherTaxLiabilitiesNoncurrent"],
     "Retained Earnings": ["RetainedEarningsAccumulatedDeficit"],
     "Tax Loss Carryforward": ["OperatingLossCarryforwards"],
-    # Raporlanan toplamlar -> bilancoyu denklestiren tamamlayicilari hesaplamak icin
+    # Reported totals -> used to compute the plugs that make the balance sheet balance
     "Total Assets (reported)": ["Assets"],
     "Total Equity (reported)": ["StockholdersEquity",
                                 "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
     "Total Liabilities (reported)": ["Liabilities"],
-    # Gelir tablosunu raporlanan faaliyet karina baglamak icin (asagidaki mutabakat)
+    # Ties the income statement to reported operating income (reconciliation below)
     "Operating Income (reported)": ["OperatingIncomeLoss"],
-    # DCF ozkaynak koprusu icin: azinlik paylari ozkaynak degerinden dusulur
+    # DCF equity bridge: minority interest is deducted from equity value
     "Minority Interest": ["MinorityInterest"],
-    # Cari oranlar icin (07 analiz sayfasi): raporlanan donen varlik / KV yukumluluk
+    # Current ratio (07 analysis sheet): reported current assets / current liabilities
     "Current Assets (reported)": ["AssetsCurrent"],
     "Current Liabilities (reported)": ["LiabilitiesCurrent"],
     "Pre-tax Income (reported)": [
@@ -73,14 +73,13 @@ TAGS = {
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic"],
 }
-# toplanarak elde edilenler
-# Once tek etiketle dene (sirket toplami zaten veriyorsa onu kullan),
-# bulunamazsa bilesenleri topla.
+# Items built by summing tags: use a single total tag when the company reports one,
+# otherwise add up the components.
 SUMS = {
-    # Tarif = (ZORUNLU etiketler, OPSIYONEL etiketler)
-    # Bir tarif, ZORUNLU etiketlerinin HEPSI o yil icin bulunursa kullanilir.
-    # Boylece sirket etiket degistirdiginde seri kopmaz ve eksik bilesen
-    # sessizce dusuk toplam uretmez.
+    # Recipe = (REQUIRED tags, OPTIONAL tags)
+    # A recipe is used for a year only if ALL its required tags exist for that year,
+    # so a tag change does not break the series and a missing component does not
+    # silently produce a low total.
     "Total Debt": {
         "single": ["DebtLongtermAndShorttermCombinedAmount"],
         "recipes": [
@@ -93,9 +92,9 @@ SUMS = {
             (["LongTermDebt"], ["DebtCurrent"]),
         ],
     },
-    # Cari vergi: toplam etiket yoksa federal + eyalet + yabanci toplanir.
-    # (AMZN 2025'te yalniz federal etiketi var; tek basina almak tanimi yillar
-    # arasinda karistiriyordu.)
+    # Current tax: without a total tag, federal + state + foreign are added up.
+    # (AMZN 2025 has only the federal tag; using it alone mixed definitions
+    # across years.)
     "Current Income Tax": {
         "single": [],
         "recipes": [
@@ -104,16 +103,15 @@ SUMS = {
              ["CurrentStateAndLocalTaxExpenseBenefit", "CurrentForeignTaxExpenseBenefit"]),
         ],
     },
-    # Nakit = nakit ve benzerleri + kisa vadeli yatirimlar/menkul kiymetler.
-    # Net borc (DCF ozkaynak koprusu) bu tanimla hesaplanir; yalniz nakit
-    # alininca yatirim portfoyu buyuk sirketlerde (AAPL, GOOGL, MSFT) net borc
-    # olmasi gerekenden yuksek cikiyordu.
+    # Cash = cash and equivalents + short-term investments / marketable securities.
+    # Net debt (DCF equity bridge) uses this definition; cash alone overstated net
+    # debt for companies with large portfolios (AAPL, GOOGL, MSFT).
     "Cash & Equivalents": {
         "single": [],
         "recipes": [
-            # Her yil TEK bir menkul kiymet etiketi kullanilir: sirketler ayni tutari
-            # birden cok etiketle raporlayabiliyor (orn. TSLA'da MarketableSecurities-
-            # Current = ShortTermInvestments), toplamak cift sayim yapar.
+            # ONE securities tag per year: companies can report the same amount
+            # under several tags (e.g. TSLA MarketableSecuritiesCurrent =
+            # ShortTermInvestments), so adding them would double count.
             (["CashCashEquivalentsAndShortTermInvestments"], []),
             (["CashAndCashEquivalentsAtCarryingValue", "MarketableSecuritiesCurrent"], []),
             (["CashAndCashEquivalentsAtCarryingValue", "AvailableForSaleSecuritiesDebtSecuritiesCurrent"], []),
@@ -123,10 +121,10 @@ SUMS = {
             (["CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"], []),
         ],
     },
-    # Faaliyet disi yatirimlar (istirakler, uzun vadeli menkul kiymetler).
-    # Getirileri serbest nakit akisinda yok, bu yuzden DCF'de ayrica eklenir.
-    # Her yil tek tarif: bilanco kalemleri birbirini icerebilir (MSFT'de
-    # LongTermInvestments istirakleri de kapsar).
+    # Non-operating investments (equity-method stakes, long-term securities).
+    # Their returns are not in free cash flow, so the DCF adds them separately.
+    # One recipe per year: balance sheet lines can include each other (MSFT's
+    # LongTermInvestments also covers equity-method stakes).
     "Non-operating Investments": {
         "single": [],
         "recipes": [
@@ -144,13 +142,13 @@ SUMS = {
             (["CommonStockValue", "AdditionalPaidInCapital"], []),
             (["CommonStockValue", "AdditionalPaidInCapitalCommonStock"], []),
             (["CommonStocksIncludingAdditionalPaidInCapital"], []),
-            (["CommonStockValueOutstanding", "AdditionalPaidInCapitalCommonStock"], []),   # orn. MNST
+            (["CommonStockValueOutstanding", "AdditionalPaidInCapitalCommonStock"], []),   # e.g. MNST
             (["CommonStockValue"], []),
         ],
     },
 }
-# 'Issued' hisse, hazine hisselerini de icerir -> gercek dolasimdaki sayiyi
-# asiri gosterir. Once seyreltilmis agirlikli ortalama, sonra outstanding.
+# 'Issued' shares include treasury stock and overstate the real count.
+# Prefer diluted weighted average, then shares outstanding.
 SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding",
           "WeightedAverageNumberOfSharesOutstandingBasic",
           "CommonStockSharesOutstanding",
@@ -173,10 +171,10 @@ NOT_FOUND = "NOT FOUND"   # tag marker shown in 08_Data_Feed column F
 
 
 class DataError(ValueError):
-    """Sirketin SEC verisi modeli kurmaya yetmiyor."""
+    """The company's SEC data is not sufficient to build the model."""
 
 
-# ---------------------------------------------------------------- ag katmani
+# ---------------------------------------------------------------- network
 def _get(url):
     import urllib.request
     from lunoviq.config import sec_user_agent
@@ -191,7 +189,7 @@ def _get(url):
 
 
 def resolve_cik(token):
-    """Ticker -> 10 haneli CIK. Zaten CIK ise dogrudan dondurur."""
+    """Ticker -> 10-digit CIK; a CIK is returned as is."""
     t = token.strip().upper()
     if re.fullmatch(r"\d{1,10}", t):
         return t.zfill(10)
@@ -199,27 +197,26 @@ def resolve_cik(token):
     for row in data.values():
         if row["ticker"].upper() == t:
             return str(row["cik_str"]).zfill(10)
-    raise SystemExit("Ticker bulunamadi: %s" % token)
+    raise SystemExit("Ticker not found: %s" % token)
 
 
 def fetch_facts(cik):
-    time.sleep(0.15)                       # SEC hiz siniri
+    time.sleep(0.15)                       # SEC rate limit
     return _get("%s/api/xbrl/companyfacts/CIK%s.json" % (BASE, cik))
 
 
-# ---------------------------------------------------------------- donusturme
+# ---------------------------------------------------------------- transformation
 def fiscal_year_ends(facts):
-    """Sirketin mali yil sonu tarihlerini bulur: {yil: 'YYYY-MM-DD'}.
+    """The company's fiscal year-end dates: {year: 'YYYY-MM-DD'}.
 
-    Gelir kaleminin yillik (330-400 gun) kayitlarindan turetilir. 52/53 haftalik
-    takvim kullanan sirketlerde tarih her yil birkac gun kayar; bu yuzden sabit
-    bir ay/gun varsaymak yerine gercek tarihler toplanir.
+    Derived from annual (330-400 day) revenue facts. With a 52/53-week calendar
+    the date moves by a few days each year, so actual dates are collected instead
+    of assuming a fixed month/day.
 
-    Duzeltme (2026-09): eskiden ILK bulunan etiketin yillariyla yetiniliyordu.
-    Sirket etiket degistirdiginde (orn. NVDA 2022'de) sonraki yillar kayboluyor,
-    bilanco kalemleri de bu yuzden eslesemiyordu. Artik tum gelir etiketleri
-    birlestirilir ve yalnizca 10-K kayitlari kullanilir (10-Q'daki 12 aylik
-    kayitlar kapanmamis bir mali yil uretmesin).
+    Fix (2026-09): only the first tag found used to be read. When a company
+    switched tags (e.g. NVDA in 2022) later years disappeared and balance sheet
+    items could not be matched. All revenue tags are now merged and only 10-K
+    facts are used (so 12-month figures in a 10-Q cannot create an unclosed year).
     """
     ends = {}
     for taxo in ("us-gaap", "ifrs-full"):
@@ -238,22 +235,22 @@ def fiscal_year_ends(facts):
                     if not 330 <= (d1 - d0).days <= 400:
                         continue
                     y = d1.year if d1.month > 5 else d1.year - 1
-                    # ayni yil icin en gec tarihi tut (yil sonu bilancosuyla eslesir)
+                    # keep the latest date per year (matches the year-end balance sheet)
                     if y not in ends or r["end"] > ends[y]:
                         ends[y] = r["end"]
         if ends:
-            break                                  # us-gaap bulunduysa ifrs'e bakma
+            break                                  # us-gaap found: skip ifrs
     return ends
 
 
 def annual_series(facts, tag, fye):
-    """{mali_yil: (deger, dosyalama_tarihi)}.
+    """{fiscal_year: (value, filing_date)}.
 
-    Iki tuzagi birden asar:
-      1) SEC'in 'fy' alani DOSYALAMANIN yilidir, verinin ait oldugu yil degildir.
-         Donem her zaman 'end' tarihinden turetilir.
-      2) Bilanco kalemleri ceyreklik anlik goruntuler olarak da raporlanir.
-         Yalnizca mali yil sonuna denk gelen (+/- 7 gun) kayitlar alinir.
+    Avoids two traps:
+      1) SEC's 'fy' field is the year of the FILING, not of the data.
+         The period is always derived from the 'end' date.
+      2) Balance sheet items are also reported as quarterly snapshots.
+         Only facts at the fiscal year end (+/- 7 days) are used.
     """
     for taxo in ("us-gaap", "ifrs-full", "dei"):
         node = facts.get("facts", {}).get(taxo, {}).get(tag)
@@ -268,23 +265,23 @@ def annual_series(facts, tag, fye):
                 if not end:
                     continue
                 d1 = dt.date.fromisoformat(end)
-                if "start" in r:                          # AKIS kalemi
+                if "start" in r:                          # flow item
                     d0 = dt.date.fromisoformat(r["start"])
                     if not 330 <= (d1 - d0).days <= 400:
                         continue
                     fy = d1.year if d1.month > 5 else d1.year - 1
-                else:                                     # ANLIK (bilanco) kalemi
+                else:                                     # point-in-time (balance sheet) item
                     fy = None
                     for y, anchor in fye.items():
                         if abs((d1 - dt.date.fromisoformat(anchor)).days) <= 7:
                             fy = y
                             break
                     if fy is None:
-                        continue                          # ceyreklik goruntu -> atla
+                        continue                          # quarterly snapshot -> skip
                 filed = r.get("filed", "")
                 form = r.get("form", "")
                 rank = 0 if form.startswith("10-K") else 1
-                # Secim olcutu: once 10-K (rank kucuk), esitlikte en son dosyalanan.
+                # Preference: 10-K first (lower rank), then the latest filing.
                 score = (-rank, filed)
                 prev = out.get(fy)
                 if prev is None or score > prev[2]:
@@ -295,11 +292,11 @@ def annual_series(facts, tag, fye):
 
 
 def pick(facts, tags, fye):
-    """Her yil icin, o yili iceren en oncelikli etiketin degeri.
+    """Per year, the value of the highest-priority tag that has that year.
 
-    Eskiden ilk dolu seri butunuyle alinirdi; sirket etiket degistirince
-    (orn. WMT amortisman, TSLA amortisman, AMZN vergi) son yillar bos kaliyordu.
-    Donen etiket metni yil sirasiyla kullanilan etiketleri ' | ' ile listeler.
+    The first non-empty series used to be taken as a whole; when a company switched
+    tags (e.g. WMT and TSLA depreciation, AMZN tax) the latest years were empty.
+    The returned note lists the tags used, in year order, separated by ' | '.
     """
     merged, notes = {}, {}
     for t in tags:
@@ -317,7 +314,7 @@ def pick(facts, tags, fye):
 
 
 def build_feed(facts, n_years=3):
-    """{kalem: {yil: deger}} + hangi etiketin kullanildigi."""
+    """{item: {year: value}} plus the tags used."""
     fye = fiscal_year_ends(facts)
     if not fye:
         raise DataError("SEC companyfacts has no 10-K revenue facts (no fiscal year end found). "
@@ -330,16 +327,15 @@ def build_feed(facts, n_years=3):
             used[item] = u or NOT_FOUND
 
         elif item in SUMS:
-            # "single" (tek etikette toplam) EN DUSUK oncelikli tarif olarak eklenir.
-            # Boyle bir etiket bulunabilir ama yalnizca cok eski yillari kapsiyor
-            # olabilir (orn. KDP'de DebtLongtermAndShorttermCombinedAmount sadece
-            # 2017). Once "bulundu" deyip durmak seriyi kaybettiriyordu; artik
-            # her yil ayri degerlendiriliyor.
+            # "single" (a total in one tag) is added as the LOWEST-priority recipe.
+            # Such a tag may exist only for very old years (e.g. KDP's
+            # DebtLongtermAndShorttermCombinedAmount only for 2017). Stopping at the
+            # first hit lost the series; every year is now evaluated separately.
             recipes = list(SUMS[item]["recipes"]) + [([t], []) for t in SUMS[item]["single"]]
             if True:
-                # Etiket kaymasi: sirket yillar icinde etiket degistirebilir
-                # (orn. Coca-Cola 2024'te LongTermDebtNoncurrent -> ...AndCapitalLeaseObligations).
-                # Her yil icin, ZORUNLU bilesenleri bulunan ilk tarif kullanilir.
+                # Tag drift: companies change tags over time
+                # (e.g. Coca-Cola 2024: LongTermDebtNoncurrent -> ...AndCapitalLeaseObligations).
+                # Per year, the first recipe whose required components exist is used.
                 cache = {}
                 for req, opt in recipes:
                     for t in req + opt:
@@ -351,7 +347,7 @@ def build_feed(facts, n_years=3):
                 for y in allyears:
                     for req, opt in recipes:
                         if not all(y in cache[t] for t in req):
-                            continue                      # zorunlu eksik -> sonraki tarif
+                            continue                      # required tag missing -> next recipe
                         have = req + [t for t in opt if y in cache[t]]
                         tot[y] = sum(cache[t][y] for t in have)
                         notes[y] = " + ".join(have)
@@ -371,11 +367,11 @@ def build_feed(facts, n_years=3):
             series[item] = {k: v[0] for k, v in s.items()}
             used[item] = u or NOT_FOUND
 
-    # ---- Bilancoyu denklestiren tamamlayicilar --------------------------------
-    # Model dort aktif ve uc pasif kalemi taniyor. Gercek bir sirkette serefiye,
-    # maddi olmayan duran varlik, istirakler, hazine hissesi, AOCI gibi kalemler
-    # de var. Raporlanan toplamlardan artik olarak hesaplanip modele verilir;
-    # boylece bilanco her sirkette birebir denk kalir.
+    # ---- Balance sheet plugs ---------------------------------------------------
+    # The model has four asset and three liability lines. Real companies also have
+    # goodwill, intangibles, investments, treasury stock, AOCI and so on. These are
+    # computed as residuals from the reported totals, so the balance sheet balances
+    # exactly for every company.
     def g(item, y):
         return series.get(item, {}).get(y)
 
@@ -385,10 +381,10 @@ def build_feed(facts, n_years=3):
         ta, te = g(TA, y), g(TE, y)
         tl = g(TL, y)
         if tl is None and ta is not None and te is not None:
-            tl = ta - te                                   # Liabilities raporlanmadiysa turet
-        # Raporlanmayan bilesen (orn. AAPL'de ertelenmis vergi yukumlulugu, GOOGL'de
-        # stok) 0 sayilir: o tutar zaten "diger" kalemin icindedir. Eskiden tek
-        # bir eksik bilesen tamamlayiciyi bos birakiyor ve tahmin bilancosu tutmuyordu.
+            tl = ta - te                                   # derive Liabilities if not reported
+        # An unreported component (e.g. AAPL deferred tax liability, GOOGL inventory)
+        # counts as 0: the amount is already inside the "other" line. One missing
+        # component used to leave the plug empty and the forecast balance sheet off.
         parts_a = [g(k, y) or 0 for k in ("Cash & Equivalents", "Accounts Receivable",
                                           "Inventory", "PP&E (net)")]
         parts_l = [g(k, y) or 0 for k in ("Accounts Payable", "Total Debt",
@@ -398,22 +394,22 @@ def build_feed(facts, n_years=3):
             oa[y] = ta - sum(parts_a)
         if tl is not None:
             ol[y] = tl - sum(parts_l)
-        # Toplam ozkaynak = varliklar - yukumlulukler. Ana ortaklik ozkaynagi (TE)
-        # azinlik paylarini icermez (orn. PEP); fark da "diger ozkaynak"a gider.
+        # Total equity = assets - liabilities. Parent equity (TE) excludes minority
+        # interest (e.g. PEP); the difference goes to "other equity".
         if ta is not None and tl is not None:
             oe[y] = (ta - tl) - sum(parts_e)
         elif te is not None:
             oe[y] = te - sum(parts_e)
-    # ---- Faaliyet gideri mutabakati ------------------------------------------
-    # Sablonun gider kalemleri (COGS, SG&A, Diger) sirketlerin raporladigi
-    # kategorileri kapsamiyor (orn. AMZN: fulfillment, teknoloji, pazarlama) ve
-    # cogu sirket amortismani COGS/SG&A icinde raporluyor. Standart normalizasyon:
-    #     EBITDA = raporlanan faaliyet kari + amortisman
-    # "Diger faaliyet gideri" bu EBITDA'ya ulastiran denklestirici kalem olur;
-    # boylece tarihsel EBIT = raporlanan faaliyet kari. Amortisman gomuluyse
-    # kalem NEGATIF cikar (geri ekleme) - bu dogrudur, cift sayimi onler.
-    # Faaliyet kari raporlamayan sirketler (orn. JNJ) icin yaklasik:
-    #     faaliyet kari ~ vergi oncesi kar + faiz gideri
+    # ---- Operating expense reconciliation --------------------------------------
+    # The template's expense lines (COGS, SG&A, Other) do not cover every reported
+    # category (e.g. AMZN: fulfillment, technology, marketing), and most companies
+    # report D&A inside COGS/SG&A. Standard normalisation:
+    #     EBITDA = reported operating income + D&A
+    # "Other operating expense" is the reconciling line that reaches this EBITDA,
+    # so historical EBIT = reported operating income. When D&A is embedded the
+    # line is NEGATIVE (an add-back); that is correct and avoids double counting.
+    # For companies that do not report operating income (e.g. JNJ):
+    #     operating income ~ pre-tax income + interest expense
     recon, how = {}, set()
     for y in sorted(set(series.get("Operating Income (reported)", {})) |
                     set(series.get("Pre-tax Income (reported)", {}))):
@@ -440,9 +436,9 @@ def build_feed(facts, n_years=3):
     used["Other Liabilities (plug)"] = "Liabilities - (AP+Debt+DTL)"
     used["Other Equity (plug)"] = "(Assets - Liabilities) - (Common+Retained)  [incl. minority interest]"
 
-    # Yillar: 10-K'si olan ve geliri bulunan mali yillar. Eskiden tum serilerin
-    # birlesimi aliniyordu; tek bir kalemde gorulen kapanmamis yil (orn. AMZN
-    # "2026") modele giriyordu.
+    # Years: fiscal years with a 10-K and revenue. The union of all series used to
+    # be taken, so an unclosed year seen in one item (e.g. AMZN "2026") entered
+    # the model.
     years = sorted(y for y in fye if y in series.get("Revenue", {}))[-n_years:]
     if not years:
         raise DataError("No 10-K revenue data found.")
@@ -455,7 +451,7 @@ def to_thousands(item, val, div=1000.0):
     return val if item == "Shares Outstanding" else val / div
 
 
-# ---------------------------------------------------------------- Excel yazimi
+# ---------------------------------------------------------------- Excel writer
 def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0):
     import openpyxl
     wb = openpyxl.load_workbook(path_in)
@@ -476,7 +472,7 @@ def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0
             fd.cell(row=r, column=3 + i).value = to_thousands(item, series[item].get(y), div)
         fd.cell(row=r, column=6).value = used.get(item, "")
 
-    # --- 01_Inputs tarihsel blogunu besle (isaret kurallariyla)
+    # --- fill the historical block of 01_Inputs (template sign conventions)
     inp = wb["01_Inputs_Historicals"]
     def put(row, item, sign=1, keep_sign=False):
         for i, y in enumerate(years):
@@ -486,7 +482,7 @@ def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0
             inp.cell(row=row, column=2 + i).value = v
     put(18, "Revenue")
     put(19, "SG&A", -1)
-    put(20, "Other Operating Expense", -1, keep_sign=True)   # mutabakat kalemi negatif olabilir
+    put(20, "Other Operating Expense", -1, keep_sign=True)   # the reconciling line can be negative
     put(21, "Depreciation & Amortisation", -1)
     put(22, "Interest Expense", -1)
     put(23, "Current Income Tax", -1)
@@ -501,14 +497,14 @@ def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0
     put(32, "Retained Earnings")
     put(33, "Tax Loss Carryforward")
 
-    # hisse sayisi (bin adet) ve Growth-Margin surucileri
+    # share count (same unit divisor) and Growth-Margin drivers
     sh = series["Shares Outstanding"].get(years[-1])
     if sh:
         inp["C67"] = sh / div
-    # ---- Tahmin surucilerini gecmisten turet ---------------------------------
-    # Yalnizca buyume ve COGS marjini degil, FAALIYET GIDERI oranlarini da
-    # gecmisten al. Aksi halde tahmin yillari sablonun demo varsayimlariyla
-    # (SG&A %11,5) calisir ve marj gercege uymaz.
+    # ---- Forecast drivers from history -----------------------------------------
+    # Take operating expense ratios from history as well as growth and COGS margin;
+    # otherwise the forecast runs on the template's demo assumptions (SG&A 11.5%)
+    # and the margin does not match the company.
     rev = [series["Revenue"].get(y) for y in years]
     cogs = [series["Cost of Goods Sold"].get(y) for y in years]
     sga = [series["SG&A"].get(y) for y in years]
@@ -519,29 +515,29 @@ def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0
             inp.cell(row=row, column=c).value = round(val, nd)
 
     if all(rev) and len(rev) >= 2:
-        fill(100, rev[-1] / rev[-2] - 1)           # gelir buyumesi
+        fill(100, rev[-1] / rev[-2] - 1)           # revenue growth
     if rev[-1] and cogs[-1]:
-        fill(101, cogs[-1] / rev[-1])              # COGS marji
+        fill(101, cogs[-1] / rev[-1])              # COGS margin
     if rev[-1] and sga[-1]:
-        fill(43, abs(sga[-1]) / rev[-1])           # SG&A % gelir
+        fill(43, abs(sga[-1]) / rev[-1])           # SG&A % of revenue
     ox = next((v for v in reversed(oox) if v), None)
     if rev[-1] and ox:
-        fill(44, ox / rev[-1])                     # diger faaliyet gideri % gelir (isaretli)
+        fill(44, ox / rev[-1])                     # other operating expense % of revenue (signed)
     elif rev[-1]:
-        fill(44, 0.0)                              # veri yoksa sifirla (demo degeri kalmasin)
+        fill(44, 0.0)                              # no data -> zero (no demo value left behind)
 
-    # Growth-Margin modunda tarihsel COGS de gercek veriden gelmeli.
-    # Aksi halde 2023-25 sutunlari hala birim ekonomisi maliyet bloglarindan
-    # beslenir ve EBITDA marji sacmalar.
+    # In Growth-Margin mode historical COGS must also come from the filings;
+    # otherwise the historical columns are still fed by the unit-cost blocks and
+    # the EBITDA margin is meaningless.
     op = wb["02_Operating_Model"]
     for i, y in enumerate(years):
         cogs = to_thousands("Cost of Goods Sold", series["Cost of Goods Sold"].get(y), div)
         if cogs is not None:
             col = 2 + i                                    # B, C, D
-            op.cell(row=78, column=col).value = cogs       # Total COGS (tarihsel)
+            op.cell(row=78, column=col).value = cogs       # Total COGS (historical)
 
     wb["00_Dashboard"]["B5"] = company
-    wb["00_Dashboard"]["B12"] = "Growth-Margin"    # dis veriyle calisirken dogru mod
+    wb["00_Dashboard"]["B12"] = "Growth-Margin"    # the right mode for external data
     wb.save(path_out)
     return path_out
 
@@ -549,12 +545,12 @@ def write_model(path_in, path_out, company, cik, series, used, years, div=1000.0
 # ---------------------------------------------------------------- CLI
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("ticker", help="Ticker (AAPL) veya CIK (0000320193)")
-    ap.add_argument("--model", default="Lunoviq_Master_Financial_Model_v2.xlsx")
+    ap.add_argument("ticker", help="Ticker (AAPL) or CIK (0000320193)")
+    ap.add_argument("--model", default="templates/Lunoviq_Master_Financial_Model_v2.xlsx")
     ap.add_argument("--out", default=None)
     ap.add_argument("--years", type=int, default=3)
-    ap.add_argument("--facts", default=None, help="Cevrimdisi test icin companyfacts JSON dosyasi")
-    ap.add_argument("--save-json", default=None, help="Cekilen ham companyfacts JSON'u bu dosyaya yaz")
+    ap.add_argument("--facts", default=None, help="companyfacts JSON file for offline runs")
+    ap.add_argument("--save-json", default=None, help="save the raw companyfacts JSON to this file")
     a = ap.parse_args()
 
     if a.facts:
@@ -565,7 +561,7 @@ def main():
         facts = fetch_facts(cik)
         if a.save_json:
             json.dump(facts, open(a.save_json, "w"))
-            print("Ham JSON kaydedildi: %s" % a.save_json)
+            print("Raw JSON saved: %s" % a.save_json)
     company = facts.get("entityName", a.ticker)
 
     try:
@@ -577,9 +573,9 @@ def main():
     out = a.out or "%s_Model.xlsx" % re.sub(r"\W+", "_", company)[:40]
     write_model(a.model, out, company, cik, series, used, years)
 
-    print("Sirket : %s (CIK %s)" % (company, cik))
-    print("Yillar : %s" % ", ".join(str(y) for y in years))
-    print("Yazildi: %s" % out)
+    print("Company: %s (CIK %s)" % (company, cik))
+    print("Years  : %s" % ", ".join(str(y) for y in years))
+    print("Written: %s" % out)
     for item in ORDER:
         vals = [series[item].get(y) for y in years]
         flag = "  <-- NOT FOUND" if used.get(item) == NOT_FOUND else ""
@@ -588,17 +584,15 @@ def main():
         print("\nNOT FOUND (%d) - fill in manually: %s" % (len(missing), ", ".join(missing)))
 
     print("""
-SIRADAKI ADIMLAR (model bunlar yapilmadan tamam degildir)
-  1. 00_Dashboard B10 -> CARI HISSE FIYATI. Finansal tablolarda yoktur,
-     elle girilir. Simdi sablonun demo degeri (18.50) duruyor.
-  2. 06_Comparable_Valuation -> emsal sirketler hala kurgusal (Peer Alpha...).
-     Gercek emsallerle degistir; degistirmezsen 'Football Field' kontrolu
-     kirmizi yanar (dogru davranis).
-  3. 01_Inputs satir 100-101 -> gelir buyumesi ve COGS marji son yildan
-     kopyalandi. Bunlar SENIN TAHMININ olmali, gecmisin tekrari degil.
-  4. 08_Data_Feed sutun F -> hangi XBRL etiketinin kullanildigini kontrol et.
-  5. 00_Dashboard I57 -> model sagligi. Kirmizi ise sebebi bulunana kadar
-     sonuclara guvenme.""")
+NEXT STEPS (this standalone feed only fills the historicals; the full pipeline,
+`python -m lunoviq run <TICKER>`, does all of this automatically)
+  1. 00_Dashboard B10 -> current share price (not in the filings).
+  2. 06_Comparable_Valuation -> the peers are still placeholders; replace them,
+     otherwise the football-field check turns red (by design).
+  3. 01_Inputs rows 100-101 -> revenue growth and COGS margin are copied from the
+     last year; they should be your forecast, not a repeat of history.
+  4. 08_Data_Feed column F -> check which XBRL tag was used.
+  5. 00_Dashboard I57 -> model health; if red, do not rely on the results.""")
 
 if __name__ == "__main__":
     main()

@@ -344,3 +344,24 @@ Agreed with the user: professional analysts compare the sources and choose one, 
   - MSFT $257 → $331,
   - AAPL $111 → $140.
 - **Flagged for review:** AAPL, NVDA, GOOGL and KDP, where year-1 consensus is more than 10 points from history. KDP's +58% comes from an acquisition, so enter guidance there.
+
+## 2026-09-28: Preparing the repository for publishing; chart fix
+
+The user decided: public repository, all rights reserved, GitHub noreply e-mail.
+
+- **Layout.**
+  - Templates moved to `templates/`.
+  - `edgar_feed.py` moved to `tools/`.
+  - All paths updated: pipeline default, config example, builders, tests.
+- **Not published** (untracked and ignored, kept locally):
+  - the original source workbooks and early generated models,
+  - the Turkish README and report, and its generator,
+  - the superseded `peer_fetch.py` and `peers.csv`,
+  - `.claude/`.
+  The v2 provenance tests need the original workbooks and skip without them.
+- **English only.** Comments, CLI help and messages in `sec_xbrl.py` are translated; the AST is unchanged apart from string constants. `Lunoviq.command` is translated too.
+- **Docs.** `LICENSE` added (all rights reserved; viewing only). README gets a screenshot, the new layout, a growth section, updated status and limitations, and a license section.
+- **Fixes in the web financials chart.**
+  - Scale assumed USD thousands, so bars overflowed in USD millions runs. Now scaled by `unit_div`.
+  - The axis could end below the tallest bar, because `niceTicks` stops below the maximum. This was pre-existing. The axis is now extended to cover it.
+  - Found in a full-size screenshot; the earlier small screenshots missed it.

@@ -17,7 +17,7 @@ The patch is applied at XML level, like build_master.py, so charts, styles and
 names are copied byte for byte.
 
 Usage:
-    python tools/build_master_v3.py [--out Lunoviq_Master_Financial_Model_v3.xlsx]
+    python tools/build_master_v3.py [--out templates/Lunoviq_Master_Financial_Model_v3.xlsx]
 """
 import argparse
 import html
@@ -31,7 +31,7 @@ from build_master import sheet_part  # noqa: E402
 from xlsx_inspect import cells  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "Lunoviq_Master_Financial_Model_v2.xlsx"
+SRC = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v2.xlsx"
 SHEET = "05_Sensitivity"
 DCF = "'04_DCF_Valuation'"
 INP = "'01_Inputs_Historicals'"
@@ -97,7 +97,7 @@ def build(out, src=SRC):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "Lunoviq_Master_Financial_Model_v3.xlsx"))
+    ap.add_argument("--out", default=str(ROOT / "templates" / "Lunoviq_Master_Financial_Model_v3.xlsx"))
     a = ap.parse_args()
     if Path(a.out).resolve() == SRC.resolve():
         raise SystemExit("refusing to overwrite v2")

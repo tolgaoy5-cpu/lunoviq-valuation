@@ -9,3 +9,16 @@ config/lunoviq.toml
 .cache/
 * copy.xlsx
 backups/
+
+# kept locally, not published: original source workbooks, early generated
+# models, working documents and superseded scripts
+/Financial Analysis and Valuation.xlsx
+/Financial_Analysis_and_Valuation_Fixed.xlsx
+/*_Model.xlsx
+/.claude/
+/docs/README_tr.md
+/reports/
+/tools/build_report.py
+/tools/report_*.html
+/peer_fetch.py
+/peers.csv

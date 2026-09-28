@@ -86,7 +86,7 @@ def test_search_exact_then_prefix_then_name(base):
     ({"ticker": "KO", "overrides": {"terminal_growth": 0.2}}, "Terminal growth"),
     ({"ticker": "KO", "overrides": {"exit_multiple": "abc"}}, "Exit multiple must be a number"),
 ])
-def test_invalid_requests_rejected_in_turkish(base, body, msg):
+def test_invalid_requests_rejected_with_clear_message(base, body, msg):
     code, res = call(base, "/api/runs", body)
     assert code == 400 and msg in res["error"]
 

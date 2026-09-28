@@ -11,10 +11,10 @@ PY="$(command -v python3)"
 [ -x /opt/anaconda3/bin/python3 ] && PY=/opt/anaconda3/bin/python3
 
 if curl -s -o /dev/null -m 2 "$URL/api/history"; then
-  echo "Lunoviq zaten çalışıyor — tarayıcı açılıyor: $URL"
+  echo "Lunoviq is already running; opening the browser: $URL"
   open "$URL"
   exit 0
 fi
 
-echo "Lunoviq başlatılıyor… (kapatmak için bu pencereyi kapatın)"
+echo "Starting Lunoviq... (close this window to stop it)"
 exec "$PY" -W ignore -m lunoviq serve --port "$PORT"

@@ -21,7 +21,7 @@ The benchmark peer ranges (07 C:F) are data cells; the pipeline fills them from
 the real peer set (lunoviq/excel/presentation.py).
 
 Usage:
-    python tools/build_master_v7.py [--out Lunoviq_Master_Financial_Model_v7.xlsx]
+    python tools/build_master_v7.py [--out templates/Lunoviq_Master_Financial_Model_v7.xlsx]
 """
 import argparse
 import html
@@ -35,7 +35,7 @@ from build_master_v4 import set_cell  # noqa: E402
 from xlsx_inspect import cells as read_cells  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "Lunoviq_Master_Financial_Model_v6.xlsx"
+SRC = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v6.xlsx"
 INP, AN, DASH = "01_Inputs_Historicals", "07_Analysis_Scenarios", "00_Dashboard"
 S, I = "'03_3_Statement_Model'", "'01_Inputs_Historicals'"
 CONV = "('04_DCF_Valuation'!$F$11/'04_DCF_Valuation'!$F$7)"
@@ -93,7 +93,7 @@ def build(out, src=SRC):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "Lunoviq_Master_Financial_Model_v7.xlsx"))
+    ap.add_argument("--out", default=str(ROOT / "templates" / "Lunoviq_Master_Financial_Model_v7.xlsx"))
     a = ap.parse_args()
     if Path(a.out).resolve() == SRC.resolve():
         raise SystemExit("refusing to overwrite v6")

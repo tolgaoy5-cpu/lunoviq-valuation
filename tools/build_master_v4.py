@@ -24,7 +24,7 @@ Valuation-method fixes (5-year horizon kept):
 Applied at XML level; charts, styles and all other cells are byte-identical.
 
 Usage:
-    python tools/build_master_v4.py [--out Lunoviq_Master_Financial_Model_v4.xlsx]
+    python tools/build_master_v4.py [--out templates/Lunoviq_Master_Financial_Model_v4.xlsx]
 """
 import argparse
 import html
@@ -37,7 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_master import sheet_part  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "Lunoviq_Master_Financial_Model_v3.xlsx"
+SRC = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v3.xlsx"
 INP, DCF, SENS = "01_Inputs_Historicals", "04_DCF_Valuation", "05_Sensitivity"
 IS = "'03_3_Statement_Model'"
 
@@ -117,7 +117,7 @@ def build(out, src=SRC):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=str(ROOT / "Lunoviq_Master_Financial_Model_v4.xlsx"))
+    ap.add_argument("--out", default=str(ROOT / "templates" / "Lunoviq_Master_Financial_Model_v4.xlsx"))
     a = ap.parse_args()
     if Path(a.out).resolve() == SRC.resolve():
         raise SystemExit("refusing to overwrite v3")

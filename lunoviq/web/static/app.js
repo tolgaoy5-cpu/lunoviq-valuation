@@ -250,11 +250,14 @@ function footballField(d) {
 function finChart(d) {
   const f = d.financials, n = d.years.length, W = chartWidth(1040), H = W < 600 ? 220 : 280, L = 34, B = 26, T = 10;
   const vals = f.revenue.concat(f.ebitda).filter(isNum);
-  const hi = Math.max(...vals) * 1.08, ticks = niceTicks(0, hi / 1e6, 4);
-  const y = (v) => T + (1 - v / (ticks[ticks.length - 1] * 1e6)) * (H - T - B);
+  const toB = unitDiv / 1e9;                       // model units -> USD billions (axis unit)
+  const hi = Math.max(...vals) * 1.08, ticks = niceTicks(0, hi * toB, 4);
+  const step = ticks.length > 1 ? ticks[1] - ticks[0] : hi * toB || 1;
+  while (ticks[ticks.length - 1] < hi * toB) ticks.push(ticks[ticks.length - 1] + step);   // axis covers the tallest bar
+  const y = (v) => T + (1 - (v * toB) / ticks[ticks.length - 1]) * (H - T - B);
   const slot = (W - L) / n, bw = Math.min(26, slot * 0.32);
   let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Revenue and EBITDA, actual and forecast">`;
-  ticks.forEach((t) => { s += `<line class="gridl" x1="${L}" x2="${W}" y1="${y(t * 1e6)}" y2="${y(t * 1e6)}"/><text x="${L - 8}" y="${y(t * 1e6) + 4}" text-anchor="end">${nf(0).format(t)}</text>`; });
+  ticks.forEach((t) => { s += `<line class="gridl" x1="${L}" x2="${W}" y1="${y(t / toB)}" y2="${y(t / toB)}"/><text x="${L - 8}" y="${y(t / toB) + 4}" text-anchor="end">${nf(0).format(t)}</text>`; });
   d.years.forEach((yr, i) => {
     const cx = L + slot * i + slot / 2, fc = i >= 3;
     if (isNum(f.revenue[i])) s += `<rect class="${fc ? "bar-f" : "bar-h"}" x="${cx - bw - 1}" y="${y(f.revenue[i])}" width="${bw}" height="${H - B - y(f.revenue[i])}" rx="2"><title>${yr} revenue ${bn(f.revenue[i])}</title></rect>`;

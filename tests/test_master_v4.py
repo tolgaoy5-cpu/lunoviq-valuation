@@ -5,8 +5,8 @@ from conftest import ROOT
 from xlsx_inspect import cells, defined_names, diff
 import build_master_v4
 
-V3 = ROOT / "Lunoviq_Master_Financial_Model_v3.xlsx"
-V4 = ROOT / "Lunoviq_Master_Financial_Model_v4.xlsx"
+V3 = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v3.xlsx"
+V4 = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v4.xlsx"
 
 
 def test_v4_build_reproducible(tmp_path):

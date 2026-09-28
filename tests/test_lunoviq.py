@@ -13,7 +13,7 @@ from lunoviq.providers.sec_edgar import SecEdgarProvider
 from lunoviq.schema import AUTO, OVERRIDE, TEMPLATE, DataPoint, PriceHistory
 
 KO = ROOT / "data" / "fixtures" / "ko.json"
-TEMPLATE_PATH = ROOT / "Lunoviq_Master_Financial_Model_v4.xlsx"
+TEMPLATE_PATH = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v4.xlsx"
 
 
 @pytest.fixture(scope="module")

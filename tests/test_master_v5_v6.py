@@ -7,7 +7,7 @@ from xlsx_inspect import cells, defined_names, diff
 import build_master_v5
 import build_master_v6
 
-V4, V5, V6 = (ROOT / ("Lunoviq_Master_Financial_Model_v%d.xlsx" % n) for n in (4, 5, 6))
+V4, V5, V6 = (ROOT / "templates" / ("Lunoviq_Master_Financial_Model_v%d.xlsx" % n) for n in (4, 5, 6))
 
 
 @pytest.mark.parametrize("mod,out_name,ref", [(build_master_v5, "v5.xlsx", V5), (build_master_v6, "v6.xlsx", V6)])

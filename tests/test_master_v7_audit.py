@@ -5,8 +5,8 @@ from conftest import ROOT
 from xlsx_inspect import cells, defined_names, diff
 import build_master_v7
 
-V6 = ROOT / "Lunoviq_Master_Financial_Model_v6.xlsx"
-V7 = ROOT / "Lunoviq_Master_Financial_Model_v7.xlsx"
+V6 = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v6.xlsx"
+V7 = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v7.xlsx"
 KO = ROOT / "data" / "fixtures" / "ko.json"
 
 

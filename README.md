@@ -7,12 +7,15 @@ valuation model:
 python -m lunoviq run KO
 ```
 
+![Lunoviq web app: valuation results for Coca-Cola](docs/screenshot.png)
+
 ```
 Ticker ─► Data providers ─► Standardized schema ─► Excel model (copy) ─► Recalculation ─► Validation
           SEC EDGAR          DataPoint:             named ranges,          Microsoft Excel    health checks,
           Yahoo prices       value + unit +         formula-protected,     via xlwings        CHECK flags,
           US Treasury/FRED   source + date +        09_Sources audit log                      run.json record
           Damodaran ERP      method + status
+          Analyst consensus
 ```
 
 The Excel model contains a 3-statement model, DCF (perpetuity and exit
@@ -127,14 +130,18 @@ The tests cover:
 - WACC components (beta regression, cost-of-debt floor, tax rate, capital weights).
 - Named-range writing and formula protection.
 - The offline end-to-end pipeline.
-- Template integrity. The master is a byte-level merge of two workbook branches
-  and is regression-tested against Excel-computed values.
+- Template integrity: every template version is rebuilt by its script and
+  compared with the committed file, and only the intended cells may change.
+  (The provenance tests of v2 need the original source workbooks, which are not
+  published, and are skipped without them.)
 
 ## Repository layout
 
 ```
 lunoviq/                 package
-  providers/             sec_edgar, sec_xbrl (XBRL mapping engine), yahoo, rates
+  providers/             sec_edgar, sec_xbrl (XBRL mapping engine), yahoo, rates,
+                         industry (Damodaran), estimates (analyst consensus)
+  drivers.py             forecast drivers: consensus/guidance/history growth, working capital, capex
   schema.py              standardized DataPoint / FinancialStatements model
   market_inputs.py       cost-of-capital inputs from market data
   excel/                 writer (named ranges, audit log), recalc (Excel), reader
@@ -143,11 +150,13 @@ lunoviq/                 package
   summary.py             run summary for the UI
   web/                   local web app (server.py + static/)
 config/                  lunoviq.example.toml (committed), lunoviq.toml (local)
-tools/                   workbook inspector/differ, master-template builder
+templates/               master Excel templates v1-v7 (the pipeline uses v7)
+tools/                   template builders (one XML-level patch per version), workbook
+                         inspector/differ, batch check, Mac app builder, edgar_feed CLI
 tests/                   pytest suite
 data/fixtures/           cached SEC payloads for offline tests
-docs/                    workbook inventory, architecture, change log
-edgar_feed.py, peer_fetch.py   original CLIs (still supported)
+peers/                   optional analyst peer lists (peers/<TICKER>.csv)
+docs/                    workbook inventory, change log, screenshot
 ```
 
 ## Status
@@ -167,9 +176,10 @@ edgar_feed.py, peer_fetch.py   original CLIs (still supported)
   - trading comparables with automatic or analyst-chosen peers.
 - Reverse DCF.
 - Independent audit: Python recomputes the whole 5-year forecast and matches Excel.
-- The web app.
+- Revenue growth from analyst consensus or company guidance, with history as fallback.
+- The web app and a double-clickable macOS app.
 
-**Next:** publishing (GitHub), licensed data providers for commercial use, and precedent-transaction data.
+**Next:** licensed data providers for commercial use, and precedent-transaction data.
 
 See `docs/CHANGELOG.md` for every change and its reasoning.
 
@@ -178,10 +188,18 @@ See `docs/CHANGELOG.md` for every change and its reasoning.
 - US SEC filers only; annual data only. Some companies are unsupported because
   SEC's XBRL data for them is incomplete (for example XOM).
 - Yahoo data is unofficial and not for commercial redistribution.
-- Forecast drivers are mechanical (history-based) defaults; they are analyst
-  assumptions, flagged in `09_Sources` and in the app.
+- Apart from revenue growth, forecast drivers (margins, working capital, capex)
+  are history-based defaults; they are flagged in `09_Sources` and in the app.
+- Analyst consensus includes announced acquisitions, which the model does not
+  add to the balance sheet; the app flags such cases (enter guidance instead).
 - There is no free source for precedent transactions, so that method shows as n/a.
 - Share buybacks are not modelled, so forecast cash builds up.
 - Recalculation needs Microsoft Excel for Mac (via xlwings). Workbooks are
   recalculated on a copy inside Excel's sandbox folder; if Excel stops responding
   (for example because a dialog is open), the run stops after 180 s with a clear message.
+
+## License
+
+Copyright (c) 2026 Tolga Oy. All rights reserved. The code is published for
+viewing only; see [LICENSE](LICENSE). Data from SEC EDGAR is public; Yahoo,
+Damodaran and stockanalysis.com data are subject to their own terms.

@@ -36,10 +36,10 @@ tax_rate_fallback = 0.21              # US federal statutory, used if effective 
 tax_rate_bounds = [0.0, 0.35]
 
 [paths]
-template = "Lunoviq_Master_Financial_Model_v7.xlsx"
+template = "templates/Lunoviq_Master_Financial_Model_v7.xlsx"
 output_dir = "output"
 overrides_dir = "overrides"
-peers_dir = "peers"                   # peers/<TICKER>.csv: analyst peer list (ticker,karar,gerekce)
+peers_dir = "peers"                   # peers/<TICKER>.csv: analyst peer list (ticker,decision,rationale)
 
 [pipeline]
 recalculate = true                    # needs Microsoft Excel (xlwings)

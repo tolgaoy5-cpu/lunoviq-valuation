@@ -34,7 +34,7 @@ def test_ko_balance_sheet_plugs_close(ko):
 
 def test_write_model_on_v2_leaves_template_untouched(ko, tmp_path):
     series, used, years = ko
-    tpl = ROOT / "Lunoviq_Master_Financial_Model_v2.xlsx"
+    tpl = ROOT / "templates" / "Lunoviq_Master_Financial_Model_v2.xlsx"
     before = tpl.read_bytes()
     out = tmp_path / "KO.xlsx"
     EF.write_model(str(tpl), str(out), "COCA COLA CO", "0000021344", series, used, years)
@@ -49,7 +49,7 @@ def test_ko_recalc_health_ok(ko, tmp_path):
     from recalc import recalc
     series, used, years = ko
     out = tmp_path / "KO.xlsx"
-    EF.write_model(str(ROOT / "Lunoviq_Master_Financial_Model_v2.xlsx"), str(out),
+    EF.write_model(str(ROOT / "templates" / "Lunoviq_Master_Financial_Model_v2.xlsx"), str(out),
                    "COCA COLA CO", "0000021344", series, used, years)
     c = cells(recalc(out))
     assert c["00_Dashboard"]["I57"][2] == "OK"
