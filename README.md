@@ -36,7 +36,7 @@ or an investment committee from the run's figures. The safeguards:
 
 ```bash
 python -m lunoviq serve        # or double-click Lunoviq.command (macOS)
-python tools/make_mac_app.py   # builds ~/Applications/Lunoviq.app (icon; starts in the background)
+python tools/make_mac_app.py   # builds ~/Applications/Lunoviq Valuation.app (icon; starts in the background)
 ```
 
 The app opens at `http://127.0.0.1:8765`. It runs locally only and uses the Python standard library, so nothing extra needs installing. It provides:
