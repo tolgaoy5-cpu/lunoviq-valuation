@@ -14,6 +14,9 @@ API
     GET  /api/download?run=<dir>      the Excel model
     POST /api/open {run}              open the model in Excel (macOS)
     POST /api/quit                    stop the server (from the UI's Quit link)
+    GET  /api/ai                      AI memo settings (provider, model; never the key)
+    POST /api/ai/settings {provider, api_key, model} | {clear: true}
+    POST /api/ai/memo {run}           draft the valuation memo of a run (figures checked; not advice)
 """
 import json
 import queue
@@ -187,11 +190,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({k: v for k, v in job.items() if k != "overrides"} | {"queue_position": pos})
         if u.path == "/api/history":
             return self._json(history())
+        if u.path == "/api/ai":
+            from .. import ai
+            cfg = ai.settings()
+            return self._json({"configured": bool(cfg), "provider": cfg and cfg["provider"], "model": cfg and cfg["model"]})
         if u.path == "/api/summary":
             p = run_path(q.get("run"))
             if not p or not (p / "summary.json").exists():
                 return self._json({"error": "Run not found."}, 404)
-            return self._json(json.loads((p / "summary.json").read_text()) | {"run": p.name})
+            extra = {"run": p.name}
+            if (p / "ai_memo.json").exists():
+                extra["ai_memo"] = json.loads((p / "ai_memo.json").read_text())
+            return self._json(json.loads((p / "summary.json").read_text()) | extra)
         if u.path == "/api/download":
             p = run_path(q.get("run"))
             files = list(p.glob("*_Model.xlsx")) if p else []
@@ -251,6 +261,31 @@ class Handler(BaseHTTPRequestHandler):
                             "step": None, "error": None}
             QUEUE.put(job_id)
             return self._json({"job": job_id}, 202)
+        if u.path == "/api/ai/settings":
+            from .. import ai
+            if body.get("clear"):
+                ai.clear_settings()
+                return self._json({"ok": True})
+            try:
+                ai.save_settings(str(body.get("provider", "openai")), str(body.get("api_key", "")), str(body.get("model", "")))
+            except ai.AIError as e:
+                return self._json({"error": str(e)[:1].upper() + str(e)[1:] + "."}, 400)
+            return self._json({"ok": True})
+        if u.path == "/api/ai/memo":
+            from .. import ai
+            p = run_path(body.get("run"))
+            if not p or not (p / "summary.json").exists():
+                return self._json({"error": "Run not found."}, 404)
+            try:
+                res = ai.draft(json.loads((p / "summary.json").read_text()))
+            except ai.AIError as e:
+                return self._json({"error": "No memo: %s." % str(e).rstrip(".")}, 400)
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                return self._json({"error": "No memo: this run has no figures to summarise; rebuild it."}, 400)
+            import datetime as _dt
+            res["created"] = _dt.datetime.now().isoformat(timespec="seconds")
+            (p / "ai_memo.json").write_text(json.dumps(res, indent=1))
+            return self._json(res)
         if u.path == "/api/quit":
             busy = any(j["status"] in ("queued", "running") for j in JOBS.values())
             if busy and not body.get("force"):

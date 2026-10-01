@@ -383,6 +383,49 @@ window.addEventListener("resize", () => {
   window.__rz = setTimeout(() => { if (lastResult && !$("#view-result").hidden) renderResult(lastResult, true); }, 200);
 });
 
+/* ---------------------------------------------------------------- AI memo */
+let aiState = null;
+
+function memoCard(d) {
+  const a = d.ai_memo;
+  if (a) return `<section class="card memo-card" style="margin-top:22px"><div class="card-head"><h2>Valuation memo</h2><span class="pill warn">AI draft · figures checked</span></div>
+    <p class="memo-text">${esc(a.text)}</p>
+    <p class="muted small">Drafted by ${a.provider === "openai" ? "OpenAI" : "Anthropic"} ${esc(a.model)} from this run's figures; every $ amount, percentage and multiple was checked against the valuation. Analysis, not investment advice. <button class="linkbtn" id="memo-go">Redraft</button> <span class="form-err" id="memo-err" role="alert"></span></p></section>`;
+  const setup = aiState && !aiState.configured ? `
+    <div class="memo-setup"><select id="memo-prov"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select>
+      <input id="memo-key" type="password" autocomplete="off" placeholder="API key (platform.openai.com or console.anthropic.com)">
+      <button class="btn" id="memo-save">Save key</button></div>
+    <p class="muted small">Saved only on this computer in ~/.lunoviq/ai.toml (shared with Lunoviq FP&amp;A). A ChatGPT subscription is not an API key.</p>` : "";
+  return `<section class="card memo-card empty-memo" style="margin-top:22px"><div class="card-head"><h2>Valuation memo</h2><span class="muted small">optional</span></div>
+    <p class="muted small">A short memo for a manager or an investment committee, drafted from this run's figures with your own OpenAI or Anthropic API key. Only the key figures are sent, and only when you ask; every number is checked against the valuation.</p>
+    ${setup}
+    <div class="form-actions"><button class="btn" id="memo-go"${aiState && !aiState.configured ? " disabled" : ""}>Draft AI memo</button><span class="form-err" id="memo-err" role="alert"></span></div></section>`;
+}
+
+function bindMemo(d) {
+  if (aiState === null) {
+    api("/api/ai").then((s) => { aiState = s; if (!d.ai_memo && !s.configured) renderResult(d, true); }).catch(() => {});
+  }
+  const go = $("#memo-go");
+  if (go) go.onclick = async () => {
+    go.disabled = true; go.textContent = "Writing…";
+    const err = $("#memo-err"); err.textContent = "";
+    try {
+      d.ai_memo = await api("/api/ai/memo", { method: "POST", body: JSON.stringify({ run: d.run }) });
+      renderResult(d, true);
+    } catch (e) { err.textContent = e.message; go.disabled = false; go.textContent = d.ai_memo ? "Redraft" : "Draft AI memo"; }
+  };
+  const save = $("#memo-save");
+  if (save) save.onclick = async () => {
+    const err = $("#memo-err"); err.textContent = "";
+    try {
+      await api("/api/ai/settings", { method: "POST", body: JSON.stringify({ provider: $("#memo-prov").value, api_key: $("#memo-key").value.trim() }) });
+      aiState = { configured: true };
+      renderResult(d, true);
+    } catch (e) { err.textContent = e.message; }
+  };
+}
+
 function renderResult(d, keepScroll = false) {
   lastResult = d;
   unitDiv = d.unit_div || 1e3;
@@ -437,6 +480,7 @@ function renderResult(d, keepScroll = false) {
       </div>
     </div>
 
+    ${memoCard(d)}
     <section class="card verdict" style="margin-top:22px" aria-labelledby="v-h">
       <div>
         <h2 id="v-h">Valuation</h2>
@@ -539,6 +583,7 @@ function renderResult(d, keepScroll = false) {
       </details>
     </section>`;
 
+  bindMemo(d);
   $("#open-xl").onclick = async () => {
     try { await api("/api/open", { method: "POST", body: JSON.stringify({ run: d.run }) }); toast("Opening in Excel…"); }
     catch (e) { toast(e.message); }

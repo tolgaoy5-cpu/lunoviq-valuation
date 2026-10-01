@@ -365,3 +365,19 @@ The user decided: public repository, all rights reserved, GitHub noreply e-mail.
   - Scale assumed USD thousands, so bars overflowed in USD millions runs. Now scaled by `unit_div`.
   - The axis could end below the tallest bar, because `niceTicks` stops below the maximum. This was pre-existing. The axis is now extended to cover it.
   - Found in a full-size screenshot; the earlier small screenshots missed it.
+
+
+## 2026-10-01: Repository renamed; AI valuation memo
+
+- **Rename:** the GitHub repository is now `lunoviq-valuation`, to sit next to `lunoviq-fpa`. The old URL redirects, and the local remote is updated.
+- **`lunoviq/ai.py`:** an optional memo drafted with the user's OpenAI or Anthropic key. The key is shared with Lunoviq FP&A in `~/.lunoviq/ai.toml`, outside every repository.
+  - **Facts:** values per share, sensitivity ranges, price, WACC build, reverse DCF, growth source and flags, peers and review items, all in display units.
+  - **Readings:** every comparison (price vs range, implied vs model growth and WACC, consensus vs history) is computed in code and given to the model as ready sentences.
+  - **Guardrails:**
+    - every $, % and x figure must be in the facts;
+    - stated "x% higher/lower than y%" comparisons must agree with the numbers;
+    - buy/sell/hold language is rejected;
+    - one retry with the reason, then the request fails clearly.
+  - **Live test:** the first live draft (gpt-4o-mini) called a 5.2% implied WACC "higher" than the 7.1% model WACC. Every number was right, but the comparison was wrong. The readings and the direction check were added after that, and the next live draft was correct.
+- **Web:** a "Valuation memo" card on the result page, with an inline key form when no key is set. The memo is stored with the run (`ai_memo.json`).
+- **Tests:** 8 new AI tests (service mocked); 71 fast tests pass.

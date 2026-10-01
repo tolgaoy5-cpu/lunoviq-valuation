@@ -243,3 +243,10 @@ details.sources[open] summary { margin-bottom: 12px; }
 
 .growth-flag { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); }
 .growth-flag .pill { margin-right: 6px; }
+
+.memo-card { border-color: var(--accent); }
+.memo-card.empty-memo { border-style: dashed; border-color: var(--line-strong); }
+.memo-text { font-size: 16px; line-height: 1.65; margin: 0 0 12px; max-width: 95ch; }
+.memo-setup { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+.memo-setup select, .memo-setup input { font: 14px var(--sans); color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; }
+.memo-setup input { flex: 1; min-width: 240px; }

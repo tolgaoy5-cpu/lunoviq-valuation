@@ -22,6 +22,16 @@ The Excel model contains a 3-statement model, DCF (perpetuity and exit
 multiple), sensitivity tables, trading and transaction comparables, scenarios
 (Bear/Base/Bull) and a management dashboard with built-in model-health checks.
 
+**Sister project:** [Lunoviq FP&A](https://github.com/tolgaoy5-cpu/lunoviq-fpa) covers budgeting,
+budget vs actual, rolling forecasts and 13-week cash for any company.
+
+**AI valuation memo** (optional). With your own OpenAI or Anthropic API key, the app drafts a short memo for a manager
+or an investment committee from the run's figures. The safeguards:
+- every $ amount, percentage and multiple is checked against the valuation;
+- comparisons (above/below) are worked out by the code, and a draft that states one the wrong way round is rejected;
+- a draft that gives a buy/sell/hold recommendation is rejected;
+- nothing is sent unless you ask.
+
 ## Web app
 
 ```bash
